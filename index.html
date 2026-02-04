@@ -4,8 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Duyên Phận - Xem Tuổi Vợ Chồng</title>
+    <!-- Sử dụng Tailwind qua CDN cho nhanh gọn -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <!-- Thêm thư viện html2canvas dạng global script để tránh lỗi resolve import -->
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script>
       tailwind.config = {
         theme: {
@@ -38,7 +41,9 @@
       }
     </script>
     <style>
-      body { background-color: #F9F5EB; }
+      body {
+        background-color: #F9F5EB; /* paper-bg */
+      }
     </style>
   </head>
   <body>

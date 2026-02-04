@@ -46,6 +46,7 @@ export interface TextDetail {
   phienAm: string; // Dịch âm
   dichNghia: string; // Dịch nghĩa
   giangNghia: string; // Giảng nghĩa
+  meaning_short?: string;
 }
 
 export interface LineDetail extends TextDetail {
@@ -58,6 +59,7 @@ export interface OmenDetail {
   story: string; // Tích xưa
   commentary: string; // Lời bàn
   prediction: string; // Lời đoán
+  future_prediction?: string;
 }
 
 export interface YiJingMeaning {
@@ -66,6 +68,7 @@ export interface YiJingMeaning {
   tuongQue: {
     text: string; // Lời tượng (e.g. Lôi vũ tác giải)
     explanation: string; // Giải thích chi tiết tượng quẻ
+    meaning_short?: string;
   };
   linesMeaning: LineDetail[]; // Ý nghĩa các hào (Structured)
 }
@@ -96,8 +99,8 @@ export interface IChingResult {
   // Section 2: Meaning in Divination
   divinationMeaning: DivinationMeaning;
   
-  // Section 3: Specific Contexts
-  specificContexts: SpecificContexts;
+  // Section 3: Specific Contexts - Make Optional for Lazy Loading
+  specificContexts?: SpecificContexts;
 
   imageUrl?: string;
 }

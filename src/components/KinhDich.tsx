@@ -1,30 +1,16 @@
 import React, { useState, useRef } from 'react';
 import type { TossResult, IChingResult } from '../types';
-import { consultIChing, generateHexagramImage, describeImage } from '../services/geminiService';
-import { Loader2, RefreshCcw, Scroll, Circle, ImageIcon, BookOpen, ArrowRight, Quote, BookMarked, MessageSquareQuote, ImageOff, Wand2, Zap, Download, Eye, X } from 'lucide-react';
+import { getHexagramBasicInfo } from '../services/geminiService';
+import { RefreshCcw, Scroll, Circle, BookOpen, Zap, Image as ImageIcon, X, ZoomIn, Download, Loader2 } from 'lucide-react';
 
-// Internal component to render Hexagram SVG
 const HexagramSVG: React.FC<{ lines: TossResult[] }> = ({ lines }) => {
-  // lines[0] is bottom, lines[5] is top.
-  // We draw visually from top to bottom (index 0 at top).
-  // So we reverse the array for display purposes.
   const displayLines = [...lines].reverse();
-
   return (
-    <div id="hexagram-svg-container" className="w-full h-full bg-paper-bg flex items-center justify-center p-6 border-4 border-double border-orient-gold/20">
-        <svg viewBox="0 0 100 100" className="w-full h-full max-w-[200px]">
+    <div id="hexagram-svg-container" className="w-full aspect-square bg-paper-bg flex items-center justify-center p-4 border-2 border-dashed border-orient-gold/30 rounded-lg">
+        <svg viewBox="0 0 100 100" className="w-full h-full max-w-[160px]">
         {displayLines.map((line, index) => {
-            // Determine if the line is Yang (Solid) or Yin (Broken) in the Main Hexagram
-            // 7 (Young Yang) & 9 (Old Yang) -> Solid
-            // 8 (Young Yin) & 6 (Old Yin) -> Broken
             const isYang = line.val % 2 !== 0;
-            
-            // Layout calculations
-            // Total height available ~90 units.
-            // 6 lines. Each line height 10. Gap 6.
-            // y start = 5.
             const y = 5 + index * 16; 
-            
             return (
                 <g key={index}>
                     {isYang ? (
@@ -44,57 +30,31 @@ const HexagramSVG: React.FC<{ lines: TossResult[] }> = ({ lines }) => {
 };
 
 const KinhDich: React.FC = () => {
-  const [step, setStep] = useState(0); // 0 = start, 1-6 = tossing lines, 7 = finished tossing
+  const [step, setStep] = useState(0); 
   const [lines, setLines] = useState<TossResult[]>([]);
   const [isAnimating, setIsAnimating] = useState(false);
   const [result, setResult] = useState<IChingResult | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [isZoomed, setIsZoomed] = useState(false); 
+  const [isDownloading, setIsDownloading] = useState(false);
   
-  // Image states
-  const [imageLoading, setImageLoading] = useState(false);
-  const [imageError, setImageError] = useState(false);
-  const [descLoading, setDescLoading] = useState(false);
-  const [description, setDescription] = useState<string | null>(null);
-
   const detailsRef = useRef<HTMLDivElement>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
 
-  // Helper function to generate a single line result
   const generateLine = (): TossResult => {
       const c1 = Math.random() < 0.5 ? 0 : 1;
       const c2 = Math.random() < 0.5 ? 0 : 1;
       const c3 = Math.random() < 0.5 ? 0 : 1;
       const sum = c1 + c2 + c3;
-
       let val = 0;
       let label: TossResult['label'] = 'Thiếu Dương';
       let isYang = true;
       let isChanging = false;
 
       switch (sum) {
-        case 0: // Âm động
-          label = 'Lão Âm';
-          val = 6;
-          isYang = false;
-          isChanging = true;
-          break;
-        case 3: // Dương động
-          label = 'Lão Dương';
-          val = 9;
-          isYang = true;
-          isChanging = true;
-          break;
-        case 1: // Âm tĩnh
-          label = 'Thiếu Âm';
-          val = 8;
-          isYang = false;
-          isChanging = false;
-          break;
-        case 2: // Dương tĩnh
-          label = 'Thiếu Dương';
-          val = 7;
-          isYang = true;
-          isChanging = false;
-          break;
+        case 0: val = 6; label = 'Lão Âm'; isYang = false; isChanging = true; break;
+        case 3: val = 9; label = 'Lão Dương'; isYang = true; isChanging = true; break;
+        case 1: val = 8; label = 'Thiếu Âm'; isYang = false; isChanging = false; break;
+        case 2: val = 7; label = 'Thiếu Dương'; isYang = true; isChanging = false; break;
       }
       return { val, label, isYang, isChanging };
   };
@@ -102,681 +62,366 @@ const KinhDich: React.FC = () => {
   const tossCoins = () => {
     if (step >= 6) return;
     setIsAnimating(true);
-
     setTimeout(() => {
-      const newLine = generateLine();
-      setLines(prev => [...prev, newLine]);
+      setLines(prev => [...prev, generateLine()]);
       setStep(prev => prev + 1);
       setIsAnimating(false);
-    }, 800); // Animation duration
+    }, 800);
   };
 
   const quickToss = () => {
       if (step >= 6) return;
       setIsAnimating(true);
-
-      // Simulate tossing all remaining lines
       setTimeout(() => {
           const linesNeeded = 6 - lines.length;
           const newLines: TossResult[] = [];
-          for (let i = 0; i < linesNeeded; i++) {
-              newLines.push(generateLine());
-          }
+          for (let i = 0; i < linesNeeded; i++) newLines.push(generateLine());
           setLines(prev => [...prev, ...newLines]);
           setStep(6);
           setIsAnimating(false);
       }, 600);
   };
 
-  const handleInterpret = async () => {
-    setLoading(true);
-    setResult(null); // Clear previous result
-    setImageError(false); // Reset image error
-    setDescription(null); // Reset description
-    try {
-      // 1. Get Text Result (Now from Local JSON - Instant)
-      const data = await consultIChing(lines, "");
-      setResult(data);
-      setLoading(false);
-
-      // 2. Trigger Image Generation (Async - Background)
-      await handleGenerateImage(data);
-    } catch (e) {
-      console.error(e);
-      alert("Có lỗi khi luận giải. Vui lòng thử lại.");
-      setLoading(false);
-    }
-  };
-
-  const handleGenerateImage = async (data: IChingResult) => {
-    setImageLoading(true);
-    // Optimistically reset error state
-    setImageError(false);
-    setDescription(null); // Reset description when new image is generated
-    try {
-        const imgUrl = await generateHexagramImage(data.hexagramNumber, data.hexagramName, data.symbolism);
-        if (imgUrl) {
-            setResult(prev => prev ? { ...prev, imageUrl: imgUrl } : null);
-        } else {
-            // If service returns undefined (all strategies failed), explicitly set error to show fallback
-            setImageError(true);
-        }
-    } catch (e) {
-        console.error("Image generation failed", e);
-        setImageError(true);
-    } finally {
-        setImageLoading(false);
-    }
-  };
-
-  const handleDescribeImage = async () => {
-    if (!result?.imageUrl || imageError) {
-        alert("Không có hình ảnh hợp lệ để mô tả.");
-        return;
-    }
-    
-    setDescLoading(true);
-    setDescription(null);
-
-    try {
-        let base64 = "";
-        
-        // Scenario 1: Image is already Base64 (Data URL)
-        if (result.imageUrl.startsWith('data:')) {
-            base64 = result.imageUrl;
-        } 
-        // Scenario 2: Image is URL (From Google Search)
-        else if (result.imageUrl.startsWith('http')) {
-             try {
-                // Try to fetch via fetch API (Might fail CORS)
-                const response = await fetch(result.imageUrl);
-                const blob = await response.blob();
-                base64 = await new Promise<string>((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result as string);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(blob);
-                });
-             } catch (err) {
-                 console.error("Failed to fetch image for description:", err);
-                 alert("Không thể phân tích ảnh từ nguồn bên ngoài do hạn chế bảo mật.");
-                 setDescLoading(false);
-                 return;
-             }
-        }
-
-        if (base64) {
-            const desc = await describeImage(base64);
-            setDescription(desc);
-        }
-    } catch (error) {
-        console.error(error);
-        alert("Đã xảy ra lỗi khi phân tích hình ảnh.");
-    } finally {
-        setDescLoading(false);
-    }
-  };
-
-  const handleDownloadImage = () => {
-      if (!result) return;
-      
-      let downloadUrl = "";
-      let filename = `Que_Kinh_Dich_So_${result.hexagramNumber}.png`;
-
-      // Case 1: AI Generated Image exists
-      if (result.imageUrl && !imageError) {
-          downloadUrl = result.imageUrl;
-      } 
-      // Case 2: SVG Fallback (Create a Blob from SVG content)
-      else {
-          const svgElement = document.querySelector("#hexagram-svg-container svg");
-          if (svgElement) {
-              const svgData = new XMLSerializer().serializeToString(svgElement);
-              const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
-              downloadUrl = URL.createObjectURL(blob);
-              filename = `Que_Kinh_Dich_So_${result.hexagramNumber}.svg`;
-          } else {
-              alert("Chưa có ảnh để tải về.");
-              return;
-          }
-      }
-
-      const link = document.createElement("a");
-      link.href = downloadUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+  const handleInterpret = () => {
+    // Chỉ lấy dữ liệu từ file store, không gọi AI
+    const basicInfo = getHexagramBasicInfo(lines);
+    setResult(basicInfo); 
+    // Cuộn xuống phần chi tiết sau một chút
+    setTimeout(() => {
+        detailsRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
   };
 
   const reset = () => {
     setStep(0);
     setLines([]);
     setResult(null);
-    setImageError(false);
-    setDescription(null);
+    setIsZoomed(false);
   };
+  
+  const handleDownload = async () => {
+    if (!resultRef.current || !result) return;
+    
+    // Access html2canvas from window
+    const html2canvas = (window as any).html2canvas;
+    
+    if (!html2canvas) {
+        alert("Thư viện tạo ảnh chưa tải xong. Vui lòng thử lại sau vài giây.");
+        return;
+    }
 
-  const scrollToDetails = () => {
-    if (detailsRef.current) {
-        detailsRef.current.scrollIntoView({ behavior: 'smooth' });
+    setIsDownloading(true);
+    
+    try {
+        const canvas = await html2canvas(resultRef.current, {
+            scale: 3, // Tăng độ phân giải lên 3x để ảnh nét hơn
+            useCORS: true, // Cho phép tải ảnh từ nguồn khác (nếu có)
+            backgroundColor: '#F9F5EB', // Màu nền giấy
+            onclone: (clonedDoc: Document) => {
+                // Xóa các class animation trong bản clone để tránh lỗi hiển thị mờ/nhòe do transform/opacity
+                const elements = clonedDoc.querySelectorAll('.animate-slide-up, .animate-fade-in');
+                elements.forEach((el) => {
+                    el.classList.remove('animate-slide-up');
+                    el.classList.remove('animate-fade-in');
+                    (el as HTMLElement).style.opacity = '1';
+                    (el as HTMLElement).style.transform = 'none';
+                });
+            },
+            ignoreElements: (element: HTMLElement) => {
+                // Ẩn các nút khi chụp ảnh
+                return element.tagName === 'BUTTON' && !element.classList.contains('do-not-ignore');
+            }
+        });
+
+        const image = canvas.toDataURL("image/png", 1.0);
+        const link = document.createElement("a");
+        link.href = image;
+        link.download = `Que-${result.hexagramNumber}-${result.hexagramName.replace(/\s+/g, '-')}.png`;
+        link.click();
+    } catch (error) {
+        console.error("Lỗi khi tạo ảnh:", error);
+        alert("Không thể tạo ảnh lúc này. Vui lòng thử lại.");
+    } finally {
+        setIsDownloading(false);
     }
   };
 
-  const handleImageError = () => {
-    // When the <img> tag fails to load the URL (CORS, 404, etc.)
-    console.warn("Image load failed. Switching to internal Hexagram SVG.");
-    setImageError(true);
-  };
-
-  // Helper to get descriptive text for tossing result
-  const getLineDescription = (line: TossResult) => {
-    if (line.isChanging) {
-       return line.isYang ? "Dương Động" : "Âm Động";
-    }
-    return line.isYang ? "Dương Tĩnh" : "Âm Tĩnh";
-  };
-
-  // Render visual bar only
-  const renderVisualBar = (line: TossResult) => {
-    return (
-      <div className="w-16 md:w-24 h-6 flex justify-between items-center bg-red-50/20 mx-auto">
+  const scrollToDetails = () => detailsRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const getLineDescription = (line: TossResult) => line.isChanging ? (line.isYang ? "Dương Động" : "Âm Động") : (line.isYang ? "Dương Tĩnh" : "Âm Tĩnh");
+  
+  const renderVisualBar = (line: TossResult) => (
+      <div className="w-12 h-4 flex justify-between items-center bg-red-50/20 mx-auto">
         {line.isYang ? (
-          <div className={`w-full h-4 ${line.isChanging ? 'bg-orient-red' : 'bg-gray-800'} rounded-sm`}></div>
+          <div className={`w-full h-3 ${line.isChanging ? 'bg-orient-red' : 'bg-gray-800'} rounded-[1px]`}></div>
         ) : (
-          <div className="w-full h-4 flex justify-between">
-            <div className={`w-[45%] h-full ${line.isChanging ? 'bg-orient-red' : 'bg-gray-800'} rounded-sm`}></div>
-            <div className={`w-[45%] h-full ${line.isChanging ? 'bg-orient-red' : 'bg-gray-800'} rounded-sm`}></div>
+          <div className="w-full h-3 flex justify-between">
+            <div className={`w-[45%] h-full ${line.isChanging ? 'bg-orient-red' : 'bg-gray-800'} rounded-[1px]`}></div>
+            <div className={`w-[45%] h-full ${line.isChanging ? 'bg-orient-red' : 'bg-gray-800'} rounded-[1px]`}></div>
           </div>
         )}
       </div>
-    );
-  };
+  );
 
-  // Render Table Row
-  const renderTableRow = (line: TossResult, index: number) => {
-    return (
-      <tr key={index} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
-        <td className="p-2 text-center text-gray-500 font-serif">
-          {index + 1}
-        </td>
-        {/* Column 2: Lục Thú (Thanh Long...) */}
-        <td className="p-2 text-center text-gray-700 font-medium text-xs md:text-sm whitespace-nowrap">
-          {result?.lucThu?.[index] || "-"}
-        </td>
-        {/* Column 3: Lục Thân (Phụ Mẫu...) */}
-        <td className="p-2 text-center font-bold text-orient-red text-xs md:text-sm whitespace-nowrap">
-          {result?.lucThan?.[index] || "-"}
-        </td>
-        <td className="p-2 text-center">
-          {renderVisualBar(line)}
-        </td>
-        <td className="p-2 text-center text-gray-700 text-xs md:text-sm whitespace-nowrap">
-          {result?.diaChi?.[index] || "-"}
-        </td>
-        <td className="p-2 text-center text-xs text-gray-500 font-medium whitespace-nowrap">
+  const renderTableRow = (line: TossResult, index: number) => (
+      <tr key={index} className="border-b border-gray-100 last:border-0 hover:bg-stone-50 transition-colors">
+        <td className="py-3 text-center text-gray-400 font-serif font-bold text-sm">{index + 1}</td>
+        <td className="py-3 text-center">{renderVisualBar(line)}</td>
+        <td className="py-3 text-center text-xs text-gray-600 font-medium whitespace-nowrap">
           <span className="block">{line.label}</span>
-          {line.isChanging && <span className="text-orient-red text-[10px]">(Động)</span>}
+          {line.isChanging && <span className="text-orient-red text-[10px] font-bold">(Động)</span>}
         </td>
       </tr>
-    );
-  };
+  );
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 w-full overflow-hidden px-2 md:px-0">
-      {!result && !loading ? (
+      {!result ? (
         <div className="bg-white p-6 md:p-10 rounded-2xl shadow-xl border border-orient-gold/30 text-center relative overflow-hidden max-w-4xl mx-auto">
-             {/* Decor */}
-             <div className="absolute top-0 left-0 w-20 h-20 border-t-8 border-l-8 border-orient-gold/20 rounded-tl-3xl"></div>
-             <div className="absolute bottom-0 right-0 w-20 h-20 border-b-8 border-r-8 border-orient-gold/20 rounded-br-3xl"></div>
-
-             <h2 className="text-3xl font-serif font-bold text-gray-800 mb-2 break-words">Gieo Quẻ Kinh Dịch</h2>
-             <p className="text-gray-500 italic mb-8 break-words">"Hãy tĩnh tâm suy nghĩ về điều băn khoăn, lòng thành tất linh ứng."</p>
-
-             {/* Visualization of the Hexagram building up (Simple View) */}
+             <h2 className="text-3xl font-serif font-bold text-gray-800 mb-2">Gieo Quẻ Kinh Dịch</h2>
              <div className="flex flex-col-reverse items-center justify-center min-h-[250px] py-6 px-4 bg-paper-bg rounded-lg border border-dashed border-gray-300 mb-4 overflow-hidden relative">
-                {lines.length === 0 ? (
-                  <span className="text-gray-400 text-sm">Các hào sẽ xuất hiện tại đây...</span>
-                ) : (
+                {lines.length === 0 ? <span className="text-gray-400 text-sm">Các hào sẽ xuất hiện tại đây...</span> : 
                   lines.map((l, i) => (
                     <div key={i} className="flex items-center gap-4 my-2 w-full justify-center animate-fade-in">
-                       <span className="text-xs text-gray-600 font-bold w-24 md:w-32 text-right whitespace-nowrap">
-                            {getLineDescription(l)}
-                       </span>
+                       <span className="text-xs text-gray-600 font-bold w-24 text-right">{getLineDescription(l)}</span>
                        {renderVisualBar(l)}
-                       <span className="text-xs text-gray-400 w-8 text-left whitespace-nowrap">Hào {i + 1}</span>
+                       <span className="text-xs text-gray-400 w-8 text-left">Hào {i + 1}</span>
                     </div>
                   ))
-                )}
+                }
              </div>
-
-             {/* Legend */}
-             <div className="flex items-center justify-center gap-6 mb-8 text-xs text-gray-500 flex-wrap">
-                <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-gray-800 rounded-sm"></div>
-                    <span>Hào Tĩnh (Thường)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-orient-red rounded-sm"></div>
-                    <span>Hào Động (Biến đổi)</span>
-                </div>
-             </div>
-
-             {/* Controls */}
              <div className="flex flex-col items-center gap-4">
                {step < 6 ? (
                   <div className="flex flex-col items-center gap-3">
-                    <button
-                        onClick={tossCoins}
-                        disabled={isAnimating}
-                        className={`relative w-32 h-32 rounded-full border-4 flex items-center justify-center transition-all transform active:scale-95 ${
-                        isAnimating 
-                        ? 'border-gray-300 bg-gray-100' 
-                        : 'border-orient-red bg-orient-red text-white hover:bg-red-800 shadow-lg hover:shadow-orient-red/50'
-                        }`}
-                    >
-                        {isAnimating ? (
-                        <RefreshCcw className="w-10 h-10 animate-spin text-gray-400" />
-                        ) : (
-                        <div className="flex flex-col items-center">
-                            <span className="text-3xl font-serif font-bold">{6 - step}</span>
-                            <span className="text-xs uppercase mt-1">Gieo Lần</span>
-                        </div>
-                        )}
+                    <button onClick={tossCoins} disabled={isAnimating} className={`relative w-32 h-32 rounded-full border-4 flex items-center justify-center transition-all ${isAnimating ? 'border-gray-300 bg-gray-100' : 'border-orient-red bg-orient-red text-white hover:bg-red-800 shadow-lg'}`}>
+                        {isAnimating ? <RefreshCcw className="w-10 h-10 animate-spin text-gray-400" /> : <div className="flex flex-col items-center"><span className="text-3xl font-serif font-bold">{6 - step}</span></div>}
                     </button>
-                    
-                    {/* Quick Toss Option - Allows user to finish remaining lines instantly */}
-                    <button 
-                        onClick={quickToss}
-                        disabled={isAnimating}
-                        className="flex items-center gap-2 px-6 py-2 bg-white text-gray-600 rounded-full hover:bg-orient-red hover:text-white transition-all text-sm font-medium border border-gray-200 shadow-sm"
-                    >
-                        <Zap className="w-4 h-4" />
-                        {step === 0 ? "Gieo 1 Lần (6 Hào)" : "Gieo Nhanh Phần Còn Lại"}
+                    <button onClick={quickToss} disabled={isAnimating} className="flex items-center gap-2 px-6 py-2 bg-white text-gray-600 rounded-full hover:bg-orient-red hover:text-white transition-all text-sm font-medium border border-gray-200 shadow-sm">
+                        <Zap className="w-4 h-4" /> {step === 0 ? "Gieo 1 Lần (6 Hào)" : "Gieo Nhanh"}
                     </button>
                   </div>
                ) : (
-                 <button
-                   onClick={handleInterpret}
-                   className="flex items-center px-8 py-4 bg-orient-gold text-white font-bold rounded-lg hover:bg-yellow-600 transition-colors shadow-lg animate-pulse"
-                 >
-                   <Scroll className="mr-2" />
-                   Luận Giải Quẻ
+                 <button onClick={handleInterpret} className="flex items-center px-8 py-4 bg-orient-gold text-white font-bold rounded-lg hover:bg-yellow-600 transition-colors shadow-lg animate-pulse">
+                   <Scroll className="mr-2" /> Xem Kết Quả
                  </button>
                )}
              </div>
         </div>
-      ) : loading ? (
-         <div className="flex flex-col items-center justify-center h-[400px] bg-white rounded-2xl shadow-lg border border-orient-gold/30">
-            <Loader2 className="w-16 h-16 text-orient-red animate-spin mb-4" />
-            <p className="text-xl font-serif text-gray-700">Đang bình giải thiên cơ...</p>
-         </div>
       ) : (
-        <div className="space-y-8 animate-slide-up w-full">
-           {/* Result Header */}
-           <div className="bg-white p-4 md:p-8 rounded-2xl shadow-lg border-t-4 border-orient-red flex flex-col xl:flex-row items-stretch gap-8 overflow-hidden">
-              
-              {/* Column 1: Detailed Table (Updated Layout) */}
-              <div className="w-full xl:w-auto flex flex-col bg-white rounded-lg border border-orient-gold/30 shrink-0 self-start overflow-hidden order-2 xl:order-1">
-                 <div className="bg-gray-100 p-3 text-center border-b border-gray-200">
-                    <h3 className="font-bold text-orient-red uppercase text-sm">Cấu Trúc Quẻ</h3>
-                 </div>
-                 <div className="overflow-x-auto w-full scrollbar-thin scrollbar-thumb-gray-300">
-                    <table className="w-full text-sm border-collapse min-w-[320px]">
-                        <thead>
-                        <tr className="bg-gray-50 text-gray-500 text-xs uppercase">
-                            <th className="p-2 border border-gray-100 whitespace-nowrap">Hào</th>
-                            <th className="p-2 border border-gray-100 whitespace-nowrap">Lục Thú</th>
-                            <th className="p-2 border border-gray-100 whitespace-nowrap">Lục Thân</th>
-                            <th className="p-2 border border-gray-100 min-w-[80px] whitespace-nowrap">Hình Quẻ</th>
-                            <th className="p-2 border border-gray-100 whitespace-nowrap">Địa Chi</th>
-                            <th className="p-2 border border-gray-100 whitespace-nowrap">Trạng Thái</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        {/* Render lines from Top (5) to Bottom (0) */}
-                        {[...lines].reverse().map((line, index) => {
-                            const actualIndex = lines.length - 1 - index;
-                            return renderTableRow(line, actualIndex);
-                        })}
-                        </tbody>
-                    </table>
-                 </div>
-                 <div className="p-3 bg-gray-50 border-t border-gray-200 text-center text-xs text-gray-600 flex justify-center gap-6 flex-wrap">
-                    <span className="whitespace-nowrap">Ngoại Quái: <strong className="text-orient-red">{result?.outerTrigram}</strong></span>
-                    <span className="whitespace-nowrap">Nội Quái: <strong className="text-orient-red">{result?.innerTrigram}</strong></span>
-                 </div>
-              </div>
-
-              {/* Column 2: Generated Image */}
-              <div className="w-full xl:w-1/4 flex flex-col gap-2 shrink-0 order-1 xl:order-2">
-                  <div className="aspect-[3/4] w-full rounded-lg overflow-hidden bg-gray-100 border border-gray-200 relative shadow-inner flex items-center justify-center group">
-                      {result?.imageUrl && !imageError ? (
-                        <>
-                            <img 
-                            src={result.imageUrl} 
-                            alt={result.hexagramName} 
-                            onError={handleImageError}
-                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                            />
-                            {/* Overlay Controls */}
-                            <div className="absolute top-2 right-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                                <button 
-                                    onClick={handleDescribeImage}
-                                    disabled={descLoading}
-                                    title="Mô tả chi tiết hình ảnh (AI)"
-                                    className="p-2 bg-white/80 hover:bg-white rounded-full text-orient-red shadow-md backdrop-blur-sm"
-                                >
-                                    {descLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Eye className="w-4 h-4" />}
-                                </button>
-                                <button 
-                                    onClick={() => result && handleGenerateImage(result)}
-                                    disabled={imageLoading}
-                                    title="Tạo lại ảnh minh họa"
-                                    className="p-2 bg-white/80 hover:bg-white rounded-full text-orient-red shadow-md backdrop-blur-sm"
-                                >
-                                    {imageLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Wand2 className="w-4 h-4" />}
-                                </button>
-                            </div>
-                        </>
-                      ) : (
-                        // Fallback State (Loading or Hexagram SVG)
-                        <div className="w-full h-full flex flex-col items-center justify-center bg-paper-bg relative">
-                           {imageLoading ? (
-                             <div className="flex flex-col items-center text-gray-400 p-4 text-center">
-                              <Loader2 className="w-10 h-10 animate-spin mb-2" />
-                              <span className="text-xs">Đang vẽ lại hình ảnh...</span>
-                             </div>
-                           ) : (
-                             // Internal Hexagram SVG Fallback
-                             <>
-                                <HexagramSVG lines={lines} />
-                                {/* Overlay Buttons on top of Fallback */}
-                                <div className="absolute top-2 right-2 flex gap-2">
-                                    <button 
-                                        onClick={() => result && handleGenerateImage(result)}
-                                        disabled={imageLoading}
-                                        title="Thử tạo lại ảnh nghệ thuật"
-                                        className="p-2 bg-white/80 hover:bg-white rounded-full text-orient-red shadow-md backdrop-blur-sm"
-                                    >
-                                        <Wand2 className="w-4 h-4" />
-                                    </button>
-                                </div>
-                             </>
-                           )}
-                        </div>
-                      )}
-                      
-                      {/* Caption */}
-                      {result?.imageUrl && !imageError && (
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
-                            <p className="text-white font-serif text-sm italic opacity-90 text-center line-clamp-2">
-                                Minh họa hình tượng: {result?.symbolism}
-                            </p>
-                        </div>
-                      )}
-
-                       {/* Description Overlay */}
-                        {description && (
-                            <div className="absolute inset-0 bg-black/80 p-4 overflow-y-auto animate-fade-in backdrop-blur-sm text-left">
-                                <div className="flex justify-between items-start mb-2">
-                                    <h5 className="text-white font-bold text-sm flex items-center gap-2">
-                                        <Eye className="w-4 h-4" /> Phân Tích Ảnh
-                                    </h5>
-                                    <button onClick={() => setDescription(null)} className="text-white/70 hover:text-white">
-                                        <X className="w-5 h-5" />
-                                    </button>
-                                </div>
-                                <p className="text-white/90 text-sm leading-relaxed font-serif">
-                                    {description}
-                                </p>
-                            </div>
-                        )}
-                  </div>
-                  
-                  {/* Explicit Download Button */}
-                  <button 
-                    onClick={handleDownloadImage}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors shadow-sm text-sm"
-                  >
-                     <Download className="w-4 h-4" />
-                     Tải Ảnh Về
-                  </button>
-              </div>
-
-              {/* Column 3: Text Info - UPDATED */}
-              <div className="flex-1 flex flex-col justify-center min-w-0 order-3">
-                  <div className="text-center lg:text-left">
-                    <div className="flex items-center justify-center lg:justify-start gap-2 mb-3 flex-wrap">
-                         <span className="inline-block px-3 py-1 bg-gray-100 text-gray-600 text-xs font-bold uppercase tracking-widest rounded-full whitespace-nowrap">
-                            {result?.hexagramCode}
-                        </span>
-                        <span className={`inline-block px-3 py-1 text-xs font-bold uppercase tracking-widest rounded-full border whitespace-nowrap ${result?.isYinOrYang?.includes('Dương') ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                            {result?.isYinOrYang}
-                        </span>
+        <div ref={resultRef} className="space-y-8 animate-slide-up w-full p-2 md:p-6 bg-paper-bg rounded-xl">
+           
+           <div className="bg-white p-6 md:p-10 rounded-2xl shadow-xl border border-gray-200">
+             <div className="grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-12 items-start">
+                
+                {/* --- CỘT TRÁI: CẤU TRÚC (Chiếm 4 phần) --- */}
+                <div className="md:col-span-4 flex flex-col gap-6">
+                    <div className="flex items-center gap-2 mb-2">
+                        <div className="w-1 h-6 bg-orient-red rounded-full"></div>
+                        <h3 className="font-bold text-gray-800 uppercase text-sm tracking-wide">Cấu Trúc Quẻ</h3>
                     </div>
-                   
-                    <h2 className="text-3xl md:text-5xl font-serif font-bold text-orient-red mb-2 break-words">
-                        Quẻ Số {result?.hexagramNumber}: {result?.hexagramName}
-                    </h2>
                     
-                    <div className="h-1 w-20 bg-orient-gold mb-6 mx-auto lg:mx-0"></div>
-                    <p className="text-lg md:text-xl text-gray-800 font-serif italic mb-6 leading-relaxed break-words">
-                        "{result?.symbolism}"
-                    </p>
+                    {/* Card Cấu Trúc */}
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                        <table className="w-full text-sm border-collapse">
+                            <thead>
+                                <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                    <th className="py-2 border-b">Hào</th>
+                                    <th className="py-2 border-b">Hình</th>
+                                    <th className="py-2 border-b">Thế</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white">
+                                {[...lines].reverse().map((line, index) => renderTableRow(line, lines.length - 1 - index))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Card Đồ Hình */}
+                    <div className="flex flex-col items-center">
+                        <HexagramSVG lines={lines} />
+                        <span className="text-xs text-gray-400 mt-2 font-serif italic">Đồ hình {result.hexagramName}</span>
+                    </div>
+                </div>
+
+                {/* --- CỘT PHẢI: HÌNH ẢNH & THÔNG TIN (Chiếm 8 phần) --- */}
+                <div className="md:col-span-8 flex flex-col">
                     
-                    {/* Link to details */}
-                    <button 
-                        onClick={scrollToDetails}
-                        className="inline-flex items-center justify-center gap-2 px-4 py-3 w-full sm:w-auto bg-orient-red text-white font-medium rounded-lg hover:bg-red-800 transition-all hover:shadow-lg group text-sm md:text-base"
+                    {/* 1. Hình ảnh Minh Họa (Ở trên cùng) */}
+                    <div 
+                        className="w-full relative mb-8 group cursor-zoom-in"
+                        onClick={() => setIsZoomed(true)}
                     >
-                        <BookOpen className="w-5 h-5 shrink-0" />
-                        <span>Xem Chi Tiết Luận Giải</span>
-                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform shrink-0" />
-                    </button>
-                  </div>
-              </div>
+                         {/* Khung viền trang trí cho ảnh */}
+                         <div className="absolute inset-0 border-2 border-orient-gold/20 transform translate-x-2 translate-y-2 rounded-xl"></div>
+                         <div className="relative bg-stone-100 rounded-xl overflow-hidden shadow-lg border border-stone-200 aspect-[16/9] flex items-center justify-center">
+                            <img 
+                                src={`/images/hexagrams/${result.hexagramNumber}.jpg`} 
+                                alt={`Minh họa quẻ ${result.hexagramName}`}
+                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                                onError={(e) => {
+                                    // Fallback nếu không có ảnh: Hiện placeholder đẹp
+                                    const target = e.target as HTMLImageElement;
+                                    target.style.display = 'none';
+                                    target.parentElement?.classList.add('flex', 'flex-col', 'items-center', 'justify-center', 'bg-stone-50');
+                                }}
+                            />
+                            {/* Fallback content hiển thị khi ảnh ẩn đi (do error) hoặc đang load */}
+                            <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 z-[-1] pointer-events-none group-has-[img[style*='none']]:opacity-100 group-has-[img[style*='none']]:z-10">
+                                <ImageIcon className="w-16 h-16 text-gray-300 mb-2" />
+                                <span className="text-gray-400 font-serif italic">Đang cập nhật hình ảnh minh họa</span>
+                            </div>
+                            
+                            {/* Zoom Icon Indicator */}
+                            <div className="absolute bottom-3 right-3 bg-black/60 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                <ZoomIn className="w-5 h-5" />
+                            </div>
+                         </div>
+                    </div>
+
+                    {/* 2. Thông tin Tên Quẻ (Ở dưới ảnh) */}
+                    <div className="text-center md:px-8 space-y-4">
+                        <div className="flex flex-wrap items-center justify-center gap-3">
+                             <span className="px-3 py-1 bg-stone-100 text-stone-600 text-xs font-bold rounded-full uppercase tracking-wider border border-stone-200">
+                                {result.hexagramCode}
+                             </span>
+                             <span className={`px-3 py-1 text-xs font-bold rounded-full uppercase tracking-wider border ${
+                                 result.isYinOrYang.includes('Cát') ? 'bg-green-50 text-green-700 border-green-200' :
+                                 result.isYinOrYang.includes('Hung') ? 'bg-red-50 text-red-700 border-red-200' :
+                                 'bg-blue-50 text-blue-700 border-blue-200'
+                             }`}>
+                                {result.isYinOrYang}
+                             </span>
+                        </div>
+
+                        <h1 className="text-4xl md:text-5xl font-serif font-bold text-orient-red leading-tight">
+                            <span className="text-2xl text-orient-gold/80 block mb-1 font-sans font-medium uppercase tracking-widest text-sm">Quẻ Số {result.hexagramNumber}</span>
+                            {result.hexagramName}
+                        </h1>
+                        
+                        <div className="flex items-center justify-center gap-4">
+                             <div className="h-px w-12 bg-gray-300"></div>
+                             <p className="text-xl text-gray-700 font-serif italic">"{result.symbolism}"</p>
+                             <div className="h-px w-12 bg-gray-300"></div>
+                        </div>
+
+                        <div className="pt-4 flex items-center justify-center gap-3">
+                            <button onClick={scrollToDetails} className="inline-flex items-center gap-2 px-6 py-3 bg-orient-red text-white font-medium rounded-full shadow-lg hover:bg-red-800 hover:-translate-y-1 transition-all duration-300">
+                                <BookOpen className="w-5 h-5" /> 
+                                Xem Luận Giải
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+             </div>
            </div>
 
-           {/* Detailed Interpretation Section */}
-           <div ref={detailsRef} className="space-y-8 pt-8">
-                
-                {/* Section 1: Yi Jing Meaning */}
-                <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
-                    <div className="bg-stone-100 px-6 py-4 border-b border-gray-200 flex items-center gap-3">
-                        <div className="p-2 bg-orient-red rounded-lg text-white shrink-0">
-                            <span className="font-serif font-bold text-xl">I</span>
-                        </div>
-                        <h3 className="text-xl font-bold text-gray-800 font-serif break-words">Ý Nghĩa Trong Kinh Dịch</h3>
-                    </div>
+           {/* Content Section (Chi tiết luận giải) */}
+           <div ref={detailsRef} className="space-y-8 pt-4">
+                {/* 1. Meaning */}
+                <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 relative min-h-[300px]">
+                    <div className="bg-stone-100 px-6 py-4 border-b border-gray-200 flex items-center gap-3"><span className="p-2 bg-orient-red rounded-lg text-white font-bold">I</span><h3 className="text-xl font-bold text-gray-800 font-serif">Ý Nghĩa Kinh Dịch</h3></div>
                     <div className="p-6 md:p-8 space-y-6">
-                        <div>
-                            <h4 className="text-orient-red font-bold uppercase text-sm mb-2 tracking-wider">Tổng Quan</h4>
-                            <p className="text-gray-700 leading-relaxed text-justify mb-2 break-words whitespace-normal">{result?.yiJingMeaning.overview}</p>
-                            <div className="flex flex-wrap gap-4 text-sm text-gray-600 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                <span className="whitespace-nowrap">Nội Quái: <strong className="text-gray-800">{result?.innerTrigram}</strong></span>
-                                <span className="text-gray-300 hidden sm:inline">|</span>
-                                <span className="whitespace-nowrap">Ngoại Quái: <strong className="text-gray-800">{result?.outerTrigram}</strong></span>
-                            </div>
-                        </div>
-                        
-                        {/* Thoán từ structured */}
+                        <div><h4 className="text-orient-red font-bold text-sm uppercase mb-2">Tổng Quan</h4><p className="text-gray-700 leading-relaxed text-justify">{result.yiJingMeaning.overview}</p></div>
                         <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                            <h4 className="text-gray-900 font-bold text-sm mb-3 border-b border-gray-200 pb-2">Thoán Từ (Lời Phán)</h4>
-                            <div className="space-y-3 text-sm">
-                                <div className="grid grid-cols-1 sm:grid-cols-[80px_1fr] gap-1 sm:gap-2">
-                                    <span className="font-bold text-orient-red">Lời kinh:</span>
-                                    <span className="text-gray-800 font-serif font-medium break-words">{result?.yiJingMeaning.thuanTu.hanVan}</span>
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-[80px_1fr] gap-1 sm:gap-2">
-                                    <span className="font-bold text-gray-600">Dịch âm:</span>
-                                    <span className="text-gray-700 italic break-words">{result?.yiJingMeaning.thuanTu.phienAm}</span>
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-[80px_1fr] gap-1 sm:gap-2">
-                                    <span className="font-bold text-gray-600">Dịch nghĩa:</span>
-                                    <span className="text-gray-900 break-words">{result?.yiJingMeaning.thuanTu.dichNghia}</span>
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-[80px_1fr] gap-1 sm:gap-2">
-                                    <span className="font-bold text-gray-600">Giảng:</span>
-                                    <span className="text-gray-700 leading-relaxed break-words">{result?.yiJingMeaning.thuanTu.giangNghia}</span>
-                                </div>
-                            </div>
+                            <h4 className="text-gray-900 font-bold text-sm mb-2">Thoán Từ</h4>
+                            <p className="text-gray-800 font-serif italic mb-1">{result.yiJingMeaning.thuanTu.hanVan}</p>
+                            <p className="text-gray-700">{result.yiJingMeaning.thuanTu.giangNghia}</p>
                         </div>
-
-                         <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                            <h4 className="text-gray-900 font-bold text-sm mb-2">Tượng Quẻ (Hình Ảnh)</h4>
-                            <p className="text-gray-800 font-serif font-medium mb-1 break-words">"{result?.yiJingMeaning.tuongQue.text}"</p>
-                            <p className="text-gray-600 italic text-sm break-words">{result?.yiJingMeaning.tuongQue.explanation}</p>
-                        </div>
-
-                         <div>
-                            <h4 className="text-orient-red font-bold uppercase text-sm mb-4 tracking-wider flex items-center gap-2">
-                                <Scroll className="w-4 h-4" /> Ý Nghĩa Các Hào
-                            </h4>
-                            <ul className="space-y-6">
-                                {result?.yiJingMeaning.linesMeaning.map((line, idx) => (
-                                    <li key={idx} className="bg-stone-50 p-4 sm:p-5 rounded-xl border border-stone-200 transition-all hover:shadow-sm">
-                                        <h5 className="font-bold text-lg text-gray-800 mb-3 border-b border-stone-200 pb-2 flex items-center gap-2">
-                                            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-orient-gold/20 text-orient-red text-xs shrink-0">
-                                                {idx + 1}
-                                            </span>
-                                            <span className="break-words">{line.name}</span>
+                        <div>
+                            <h4 className="text-orient-red font-bold text-sm uppercase mb-4 flex items-center gap-2"><Scroll className="w-4 h-4" /> Hào Từ (Chi Tiết 6 Hào)</h4>
+                           
+                            <ul className="space-y-4">
+                                {result.yiJingMeaning.linesMeaning && result.yiJingMeaning.linesMeaning.length > 0 ? result.yiJingMeaning.linesMeaning.map((line, idx) => (
+                                    <li key={idx} className={`bg-stone-50 p-4 rounded-lg border ${lines[idx]?.isChanging ? 'border-orient-red/40 bg-red-50/20' : 'border-stone-200'}`}>
+                                        <h5 className="font-bold text-gray-800 mb-1 flex justify-between">
+                                            <span>{line.name} {lines[idx]?.isChanging && <span className="text-red-600 text-xs ml-2">(Động - Cần lưu ý)</span>}</span>
+                                            <span className="text-xs text-gray-400 font-normal hidden md:block">{line.hanVan}</span>
                                         </h5>
-                                        <div className="space-y-3 text-sm text-gray-700">
-                                             <div className="grid grid-cols-1 sm:grid-cols-[80px_1fr] gap-1 sm:gap-2">
-                                                <span className="font-bold text-orient-red">Lời kinh:</span>
-                                                <span className="text-gray-800 font-serif font-medium break-words">{line.hanVan}</span>
-                                            </div>
-                                            <div className="grid grid-cols-1 sm:grid-cols-[80px_1fr] gap-1 sm:gap-2">
-                                                <span className="font-bold text-gray-500">Dịch âm:</span>
-                                                <span className="text-gray-600 italic break-words">{line.phienAm}</span>
-                                            </div>
-                                            <div className="grid grid-cols-1 sm:grid-cols-[80px_1fr] gap-1 sm:gap-2">
-                                                <span className="font-bold text-gray-500">Dịch nghĩa:</span>
-                                                <span className="text-gray-900 break-words">{line.dichNghia}</span>
-                                            </div>
-                                            <div className="mt-2 pt-2 border-t border-stone-200">
-                                                <p className="leading-relaxed break-words whitespace-normal"><span className="font-bold text-gray-600 mr-1">Giảng nghĩa:</span> {line.giangNghia}</p>
-                                            </div>
-                                        </div>
+                                        <p className="text-sm text-gray-700 italic mb-1">{line.phienAm}</p>
+                                        <p className="text-sm text-gray-900 font-medium mb-2">{line.dichNghia}</p>
+                                        <p className="text-sm text-gray-600 border-t border-gray-200 pt-2">{line.giangNghia}</p>
                                     </li>
-                                ))}
+                                )) : <p className="text-gray-500 italic text-sm text-center">Đang cập nhật dữ liệu hào từ cho quẻ này...</p>}
                             </ul>
                         </div>
                     </div>
                 </div>
 
-                {/* Section 2: Divination Meaning */}
-                <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
-                     <div className="bg-stone-100 px-6 py-4 border-b border-gray-200 flex items-center gap-3">
-                        <div className="p-2 bg-orient-gold rounded-lg text-white shrink-0">
-                            <span className="font-serif font-bold text-xl">II</span>
+                {/* 2. Divination */}
+                <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 relative min-h-[200px]">
+                     <div className="bg-stone-100 px-6 py-4 border-b border-gray-200 flex items-center gap-3"><span className="p-2 bg-orient-gold rounded-lg text-white font-bold">II</span><h3 className="text-xl font-bold text-gray-800 font-serif">Ý Nghĩa Chiêm Bốc</h3></div>
+                     <div className="p-6 md:p-8 space-y-6">
+                             <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                                <h4 className="text-blue-800 font-bold mb-2 flex items-center gap-2"><Circle className="w-3 h-3 fill-blue-600"/> Triệu: {result.divinationMeaning.omen.mainText}</h4>
+                                <p className="text-gray-700 text-sm italic mb-2">"{result.divinationMeaning.omen.poem}"</p>
+                                <p className="text-gray-700 text-sm">{result.divinationMeaning.omen.prediction}</p>
+                             </div>
+                             <div className="p-4 bg-purple-50 rounded-lg border border-purple-100"><h4 className="text-purple-800 font-bold text-sm mb-1">Dụng Thần</h4><p className="text-gray-700 text-sm">{result.divinationMeaning.godToUse}</p></div>
                         </div>
-                        <h3 className="text-xl font-bold text-gray-800 font-serif break-words">Ý Nghĩa Chiêm Bốc (Đoán Quẻ)</h3>
-                    </div>
-                    <div className="p-6 md:p-8 space-y-8">
-                        {/* Meaning Keywords */}
-                        <div>
-                             <h4 className="text-orient-red font-bold uppercase text-sm mb-2 tracking-wider">Ý Nghĩa Cốt Lõi</h4>
-                             <p className="text-gray-700 leading-relaxed text-lg font-medium bg-orange-50/50 p-4 rounded-lg border border-orange-100 break-words">
-                                {result?.divinationMeaning.meaning}
-                             </p>
-                        </div>
-                        
-                        {/* Omen / Triệu */}
-                        <div className="grid grid-cols-1 gap-6">
-                            <div className="bg-blue-50/50 p-6 rounded-xl border border-blue-100">
-                                <h4 className="text-blue-800 font-bold mb-4 flex items-center gap-2 flex-wrap">
-                                    <Circle className="w-4 h-4 fill-blue-600 shrink-0" /> Triệu & Điềm: <span className="text-blue-900 uppercase break-words">{result?.divinationMeaning.omen.mainText}</span>
-                                </h4>
-                                
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
-                                    {/* Poem */}
-                                    <div className="bg-white p-4 rounded-lg shadow-sm">
-                                        <h5 className="text-gray-500 text-xs uppercase font-bold mb-2 flex items-center gap-1"><Quote className="w-3 h-3"/> Thơ Cổ</h5>
-                                        <p className="font-serif text-gray-800 italic whitespace-pre-line leading-relaxed break-words">
-                                            {result?.divinationMeaning.omen.poem}
-                                        </p>
-                                    </div>
-                                    {/* Story */}
-                                    <div className="bg-white p-4 rounded-lg shadow-sm">
-                                         <h5 className="text-gray-500 text-xs uppercase font-bold mb-2 flex items-center gap-1"><BookMarked className="w-3 h-3"/> Tích Xưa</h5>
-                                         <p className="text-gray-700 text-sm leading-relaxed break-words">
-                                            {result?.divinationMeaning.omen.story}
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-3">
-                                     <div className="text-sm">
-                                        <span className="font-bold text-gray-800 flex items-center gap-1 mb-1"><MessageSquareQuote className="w-3 h-3"/> Lời Bàn:</span>
-                                        <p className="text-gray-700 break-words">{result?.divinationMeaning.omen.commentary}</p>
-                                     </div>
-                                      <div className="text-sm">
-                                        <span className="font-bold text-gray-800 flex items-center gap-1 mb-1"><ArrowRight className="w-3 h-3"/> Lời Đoán:</span>
-                                        <p className="text-gray-700 break-words">{result?.divinationMeaning.omen.prediction}</p>
-                                     </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* God to use */}
-                        <div className="p-4 border border-purple-100 bg-purple-50/50 rounded-lg">
-                            <h4 className="text-purple-800 font-bold mb-2 flex items-center gap-2"><Circle className="w-3 h-3 fill-purple-600" /> Dụng Thần</h4>
-                            <p className="text-gray-700 text-sm break-words">{result?.divinationMeaning.godToUse}</p>
-                        </div>
-                    </div>
                 </div>
 
-                {/* Section 3: Specific Contexts */}
-                <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
-                    <div className="bg-stone-100 px-6 py-4 border-b border-gray-200 flex items-center gap-3">
-                        <div className="p-2 bg-gray-700 rounded-lg text-white shrink-0">
-                            <span className="font-serif font-bold text-xl">III</span>
-                        </div>
-                        <h3 className="text-xl font-bold text-gray-800 font-serif break-words">Luận Giải Cho Từng Sự Việc</h3>
+                {/* 3. Details */}
+                <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 min-h-[200px] relative">
+                    <div className="bg-stone-100 px-6 py-4 border-b border-gray-200 flex items-center gap-3"><span className="p-2 bg-gray-700 rounded-lg text-white font-bold">III</span><h3 className="text-xl font-bold text-gray-800 font-serif">Lời Khuyên Chi Tiết</h3></div>
+                    <div className="p-6 md:p-8 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                        {[
+                            { label: "Hiện Tại", val: result?.specificContexts?.currentSituation },
+                            { label: "Tương Lai", val: result?.specificContexts?.future },
+                            { label: "Sự Nghiệp", val: result?.specificContexts?.career },
+                            { label: "Tài Lộc", val: result?.specificContexts?.wealth },
+                            { label: "Tình Duyên", val: result?.specificContexts?.love },
+                            { label: "Gia Đạo", val: result?.specificContexts?.house },
+                        ].map((item, idx) => (
+                            <div key={idx} className="border-b border-gray-100 pb-2"><h5 className="font-bold text-gray-900 text-xs uppercase mb-1">{item.label}</h5><p className="text-gray-600 text-sm">{item.val || "Đang cập nhật..."}</p></div>
+                        ))}
                     </div>
-                    <div className="p-6 md:p-8">
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-                            {[
-                                { label: "Tình thế hiện tại", val: result?.specificContexts.currentSituation },
-                                { label: "Tương lai", val: result?.specificContexts.future },
-                                { label: "Sự nghiệp & Công danh", val: result?.specificContexts.career },
-                                { label: "Tài lộc & Tài sản", val: result?.specificContexts.wealth },
-                                { label: "Tình duyên & Gia đạo", val: result?.specificContexts.love },
-                                { label: "Học tập & Thi cử", val: result?.specificContexts.study },
-                                { label: "Sức khỏe", val: result?.specificContexts.health },
-                                { label: "Con cái (Tử tức)", val: result?.specificContexts.children },
-                                { label: "Xuất hành", val: result?.specificContexts.travel },
-                                { label: "Nhà cửa (Điền trạch)", val: result?.specificContexts.house },
-                                { label: "Mồ mả", val: result?.specificContexts.graves },
-                                { label: "Tranh chấp & Kiện tụng", val: result?.specificContexts.disputes },
-                                { label: "Mất của", val: result?.specificContexts.lostProperty },
-                                { label: "Giấy tờ & Thủ tục", val: result?.specificContexts.documents },
-                            ].map((item, idx) => (
-                                <div key={idx} className="border-b border-gray-100 pb-4 last:border-0">
-                                    <h5 className="font-bold text-gray-900 text-sm uppercase mb-1">{item.label}</h5>
-                                    <p className="text-gray-600 text-sm break-words">{item.val}</p>
-                                </div>
-                            ))}
+                </div>
+           </div>
+
+           <div className="text-center pt-8 pb-8 flex flex-col md:flex-row items-center justify-center gap-4">
+               <button onClick={reset} className="px-8 py-3 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium transition-colors">Gieo quẻ mới</button>
+               <button 
+                  onClick={handleDownload} 
+                  disabled={isDownloading}
+                  className="flex items-center gap-2 px-8 py-3 rounded-full bg-orient-gold hover:bg-yellow-600 text-white font-medium transition-colors shadow-lg"
+               >
+                   {isDownloading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+                   {isDownloading ? "Đang xử lý..." : "Lưu Kết Quả (Ảnh)"}
+               </button>
+           </div>
+           
+           {/* Image Zoom Modal */}
+           {isZoomed && (
+                <div 
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4 animate-fade-in backdrop-blur-sm cursor-zoom-out"
+                    onClick={() => setIsZoomed(false)}
+                >
+                    <button 
+                        className="absolute top-4 right-4 z-50 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2 transition-all"
+                        onClick={() => setIsZoomed(false)}
+                    >
+                        <X className="w-8 h-8" />
+                    </button>
+                    
+                    <div 
+                        className="flex flex-col items-center justify-center max-w-full max-h-full space-y-4"
+                        onClick={(e) => e.stopPropagation()} 
+                    >
+                        <img 
+                            src={`/images/hexagrams/${result.hexagramNumber}.jpg`} 
+                            alt={`Minh họa quẻ ${result.hexagramName}`}
+                            className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl border border-white/10"
+                        />
+                         <div className="text-center">
+                             <h3 className="text-orient-gold font-serif text-2xl font-bold">{result.hexagramName}</h3>
+                             <p className="text-white/60 text-sm uppercase tracking-widest mt-1">Quẻ số {result.hexagramNumber}</p>
                          </div>
                     </div>
                 </div>
-
-           </div>
-
-           <div className="text-center pt-8 pb-8">
-              <button 
-                onClick={reset}
-                className="px-8 py-3 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium transition-colors"
-              >
-                Gieo quẻ mới
-              </button>
-           </div>
+           )}
         </div>
       )}
     </div>
   );
 };
-
 export default KinhDich;

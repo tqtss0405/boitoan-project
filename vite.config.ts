@@ -10,11 +10,10 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'), // Correct alias to src
+        '@': path.resolve('.', './src'),
       },
     },
     define: {
-      // Chỉ định nghĩa API_KEY, không định nghĩa đè toàn bộ process.env
       'process.env.API_KEY': JSON.stringify(env.VITE_API_KEY),
     },
   }
