@@ -1,7 +1,18 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { CompatibilityResult, FormData, IChingResult, TossResult } from "../types";
+import type { CompatibilityResult, FormData, IChingResult, TossResult } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Helper function to get the AI instance. 
+// Initializes lazily to prevent top-level crashes if API_KEY is missing during development.
+const getAI = () => {
+  // Try to get key from process.env (mapped in vite.config) or direct Vite env
+  // @ts-ignore
+  const apiKey = process.env.API_KEY || import.meta.env?.VITE_API_KEY;
+  
+  if (!apiKey || apiKey.includes('YOUR_GEMINI_API_KEY')) {
+    throw new Error("API Key chưa hợp lệ. Vui lòng mở file .env và điền key Gemini của bạn vào biến VITE_API_KEY.");
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 // Helper function to calculate Can Chi for the prompt
 const getCanChi = (year: number) => {
@@ -11,6 +22,7 @@ const getCanChi = (year: number) => {
 };
 
 export const checkCompatibility = async (data: FormData): Promise<CompatibilityResult> => {
+  const ai = getAI();
   const hYear = parseInt(data.husbandYear);
   const wYear = parseInt(data.wifeYear);
   const hCanChi = getCanChi(hYear);
@@ -76,167 +88,133 @@ export const checkCompatibility = async (data: FormData): Promise<CompatibilityR
 };
 
 export const consultIChing = async (lines: TossResult[], question: string): Promise<IChingResult> => {
-  // Convert lines to string format for prompt (Bottom to Top)
-  // 7/9 = Yang, 6/8 = Yin
-  const linesDesc = lines.map((l, i) => `Hào ${i + 1}: ${l.val} (${l.label})`).join("\n");
-  
-  const prompt = `
-    Đóng vai một bậc thầy Kinh Dịch (I Ching) đại tài. Người dùng vừa gieo quẻ (lấy ngẫu nhiên) và đang tâm niệm về một vấn đề.
-    
-    Kết quả gieo 6 hào (từ dưới lên trên - hào sơ đến hào thượng):
-    ${linesDesc}
-    
-    Hãy an quẻ, lập quẻ Chủ chính xác.
-    1. Xác định đây là quẻ Âm hay quẻ Dương.
-    2. Xác định Nội Quái (Hạ Quái) và Ngoại Quái (Thượng Quái).
-    
-    Sau đó luận giải chi tiết theo 3 phần chính sau:
-    1. Ý nghĩa của quẻ trong Kinh Dịch:
-       - Tổng quan quẻ.
-       - Thoán từ (Lời kinh, Dịch âm, Dịch nghĩa, Giảng nghĩa).
-       - Tượng quẻ: Phải nêu rõ lời tượng VÀ giải thích chi tiết ý nghĩa tượng quẻ.
-       - Ý nghĩa các hào (Lời kinh, Dịch âm, Dịch nghĩa, Giảng nghĩa).
-    
-    2. Ý nghĩa trong thuật chiêm bốc/đoán quẻ:
-       - Ý nghĩa quẻ (Giải thích các từ khóa chính, liệt kê các ý nghĩa như: giải tán, cởi bỏ...).
-       - Triệu và điềm của quẻ: Phải bao gồm Tên điềm (Ví dụ: Ngũ quan thoát nạn), Bài thơ tương ứng, Tích xưa (Điển tích), Lời bàn và Lời đoán.
-       - Dụng thần: Phân tích kỹ về dụng thần, phi thần, phục thần nếu có.
-    
-    3. Luận giải chi tiết cho từng sự việc cụ thể.
-    
-    QUY TẮC:
-    - Trả về JSON chuẩn xác.
-    - Với các hào, trường "name" chỉ ghi tên hào (VD: "Sơ Lục", "Cửu Nhị"), không lặp lại số thứ tự.
-  `;
+    const ai = getAI();
+    // Convert lines to a descriptive string for the prompt
+    // lines[0] is Bottom (Hào 1), lines[5] is Top (Hào 6)
+    const lineDesc = lines.map((l, i) => 
+        `Hào ${i + 1}: ${l.val} (${l.label}) - ${l.isChanging ? "Động (Biến)" : "Tĩnh"}`
+    ).join("\n");
 
-  const textDetailSchema = {
-    type: Type.OBJECT,
-    properties: {
-        hanVan: { type: Type.STRING, description: "Lời kinh chữ Hán gốc" },
-        phienAm: { type: Type.STRING, description: "Phiên âm Hán Việt (Dịch âm)" },
-        dichNghia: { type: Type.STRING, description: "Dịch nghĩa tiếng Việt" },
-        giangNghia: { type: Type.STRING, description: "Giảng giải ý nghĩa chi tiết" }
-    },
-    required: ["hanVan", "phienAm", "dichNghia", "giangNghia"]
-  };
+    const prompt = `
+      Bạn là một bậc thầy về Kinh Dịch và Dự Đoán Học (I Ching).
+      Người dùng đã gieo quẻ và nhận được kết quả các hào như sau (từ dưới lên trên):
+      ${lineDesc}
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          hexagramNumber: { type: Type.NUMBER, description: "Số thứ tự của quẻ trong 64 quẻ (1-64)" },
-          hexagramName: { type: Type.STRING, description: "Tên quẻ chính (Ví dụ: Thuần Càn)" },
-          hexagramCode: { type: Type.STRING, description: "Cấu trúc Thượng Quái / Hạ Quái" },
-          innerTrigram: { type: Type.STRING, description: "Tên Nội Quái (Hạ Quái), ví dụ: Ly, Chấn..." },
-          outerTrigram: { type: Type.STRING, description: "Tên Ngoại Quái (Thượng Quái), ví dụ: Khảm, Cấn..." },
-          isYinOrYang: { type: Type.STRING, description: "Xác định là 'Quẻ Dương', 'Quẻ Âm' hoặc 'Quân Bình'" },
-          symbolism: { type: Type.STRING, description: "Hình tượng ngắn gọn của quẻ" },
-          lucThan: { 
-            type: Type.ARRAY, 
-            items: { type: Type.STRING },
-            description: "Lục thân cho hào 1 đến hào 6, kèm Emoji" 
-          },
-          lucThu: { 
-            type: Type.ARRAY, 
-            items: { type: Type.STRING },
-            description: "Lục thú cho hào 1 đến hào 6, kèm Emoji" 
-          },
-          diaChi: { 
-            type: Type.ARRAY, 
-            items: { type: Type.STRING },
-            description: "Địa chi cho hào 1 đến hào 6" 
-          },
-          // Section 1
-          yiJingMeaning: {
-            type: Type.OBJECT,
-            properties: {
-                overview: { type: Type.STRING, description: "Tổng quan ý nghĩa quẻ trong Kinh Dịch" },
-                thuanTu: textDetailSchema,
-                tuongQue: {
-                    type: Type.OBJECT,
-                    properties: {
-                        text: { type: Type.STRING, description: "Lời Tượng (VD: Lôi vũ tác Giải)" },
-                        explanation: { type: Type.STRING, description: "Giải thích chi tiết ý nghĩa tượng quẻ" }
-                    },
-                    required: ["text", "explanation"]
-                },
-                linesMeaning: { 
-                    type: Type.ARRAY, 
-                    items: {
+      Câu hỏi của người dùng (nếu có): "${question || "Xin luận giải tổng quát về vận thế hiện tại"}"
+
+      Nhiệm vụ:
+      1. Xác định Quẻ Chủ (Hexagram) dựa trên các hào đã gieo.
+      2. Nếu có hào động, xác định Quẻ Biến.
+      3. Xác định các yếu tố: Lục Thân, Lục Thú, Địa Chi cho từng hào.
+      4. Luận giải chi tiết ý nghĩa của quẻ (Thoán từ, Đại tượng, Hào từ...).
+      5. Đưa ra lời khuyên cụ thể cho các khía cạnh cuộc sống (Sự nghiệp, Tài lộc, Tình duyên...).
+
+      Hãy trả về kết quả dưới dạng JSON tuân thủ schema sau.
+    `;
+
+    const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    hexagramNumber: { type: Type.NUMBER, description: "Số thứ tự quẻ (1-64)" },
+                    hexagramName: { type: Type.STRING, description: "Tên quẻ (VD: Hỏa Thủy Vị Tế)" },
+                    hexagramCode: { type: Type.STRING, description: "Mã quẻ (VD: Ly / Khảm)" },
+                    innerTrigram: { type: Type.STRING, description: "Nội quái (VD: Ly)" },
+                    outerTrigram: { type: Type.STRING, description: "Ngoại quái (VD: Khảm)" },
+                    isYinOrYang: { type: Type.STRING, description: "Quẻ Dương, Quẻ Âm hoặc Quẻ Quân Bình" },
+                    symbolism: { type: Type.STRING, description: "Hình tượng ý nghĩa ngắn gọn (VD: Việc chưa xong, dở dang)" },
+                    lucThan: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Lục Thân cho 6 hào (VD: Phụ Mẫu, Tử Tôn...)" },
+                    lucThu: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Lục Thú cho 6 hào (VD: Thanh Long, Chu Tước...)" },
+                    diaChi: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Địa Chi cho 6 hào (VD: Ngọ, Thân, Tuất...)" },
+                    yiJingMeaning: {
                         type: Type.OBJECT,
                         properties: {
-                            name: { type: Type.STRING, description: "Tên hào (VD: Sơ Lục, Cửu Nhị, Lục Tam...)" },
-                            hanVan: { type: Type.STRING },
-                            phienAm: { type: Type.STRING },
-                            dichNghia: { type: Type.STRING },
-                            giangNghia: { type: Type.STRING }
-                        },
-                        required: ["name", "hanVan", "phienAm", "dichNghia", "giangNghia"]
+                            overview: { type: Type.STRING, description: "Tổng quan ý nghĩa quẻ theo Kinh Dịch" },
+                            thuanTu: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    hanVan: { type: Type.STRING },
+                                    phienAm: { type: Type.STRING },
+                                    dichNghia: { type: Type.STRING },
+                                    giangNghia: { type: Type.STRING }
+                                }
+                            },
+                            tuongQue: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    text: { type: Type.STRING, description: "Lời Tượng (Đại Tượng)" },
+                                    explanation: { type: Type.STRING, description: "Giải thích Tượng quẻ" }
+                                }
+                            },
+                            linesMeaning: {
+                                type: Type.ARRAY,
+                                items: {
+                                    type: Type.OBJECT,
+                                    properties: {
+                                        name: { type: Type.STRING, description: "Tên hào (VD: Sơ Lục, Cửu Nhị)" },
+                                        hanVan: { type: Type.STRING },
+                                        phienAm: { type: Type.STRING },
+                                        dichNghia: { type: Type.STRING },
+                                        giangNghia: { type: Type.STRING }
+                                    }
+                                }
+                            }
+                        }
                     },
-                    description: "Chi tiết ý nghĩa 6 hào từ 1-6" 
+                    divinationMeaning: {
+                        type: Type.OBJECT,
+                        properties: {
+                            meaning: { type: Type.STRING, description: "Ý nghĩa trong chiêm bốc, tiên tri" },
+                            omen: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    mainText: { type: Type.STRING, description: "Tên Triệu (Điềm)" },
+                                    poem: { type: Type.STRING, description: "Bài thơ cổ về quẻ" },
+                                    story: { type: Type.STRING, description: "Tích cổ liên quan" },
+                                    commentary: { type: Type.STRING, description: "Lời bàn giải" },
+                                    prediction: { type: Type.STRING, description: "Lời đoán kiết hung" }
+                                }
+                            },
+                            godToUse: { type: Type.STRING, description: "Dụng thần" }
+                        }
+                    },
+                    specificContexts: {
+                        type: Type.OBJECT,
+                        properties: {
+                            currentSituation: { type: Type.STRING },
+                            future: { type: Type.STRING },
+                            career: { type: Type.STRING },
+                            study: { type: Type.STRING },
+                            wealth: { type: Type.STRING },
+                            love: { type: Type.STRING },
+                            children: { type: Type.STRING },
+                            health: { type: Type.STRING },
+                            travel: { type: Type.STRING },
+                            disputes: { type: Type.STRING },
+                            graves: { type: Type.STRING },
+                            house: { type: Type.STRING },
+                            lostProperty: { type: Type.STRING },
+                            documents: { type: Type.STRING }
+                        }
+                    }
                 }
-            },
-            required: ["overview", "thuanTu", "tuongQue", "linesMeaning"]
-          },
-          // Section 2
-          divinationMeaning: {
-            type: Type.OBJECT,
-            properties: {
-                meaning: { type: Type.STRING, description: "Ý nghĩa quẻ trong thuật chiêm bốc (Liệt kê các ý nghĩa)" },
-                omen: { 
-                    type: Type.OBJECT,
-                    properties: {
-                        mainText: { type: Type.STRING, description: "Tên điềm/Triệu (VD: Ngũ quan thoát nạn)" },
-                        poem: { type: Type.STRING, description: "Bài thơ tương ứng" },
-                        story: { type: Type.STRING, description: "Tích xưa (Điển tích)" },
-                        commentary: { type: Type.STRING, description: "Lời bàn" },
-                        prediction: { type: Type.STRING, description: "Lời đoán" }
-                    },
-                    required: ["mainText", "poem", "story", "commentary", "prediction"]
-                },
-                godToUse: { type: Type.STRING, description: "Phân tích Dụng thần" }
-            },
-            required: ["meaning", "omen", "godToUse"]
-          },
-          // Section 3
-          specificContexts: {
-            type: Type.OBJECT,
-            properties: {
-                currentSituation: { type: Type.STRING },
-                future: { type: Type.STRING },
-                career: { type: Type.STRING },
-                study: { type: Type.STRING },
-                wealth: { type: Type.STRING },
-                love: { type: Type.STRING },
-                children: { type: Type.STRING },
-                health: { type: Type.STRING },
-                travel: { type: Type.STRING },
-                disputes: { type: Type.STRING },
-                graves: { type: Type.STRING },
-                house: { type: Type.STRING },
-                lostProperty: { type: Type.STRING },
-                documents: { type: Type.STRING }
-            },
-            required: ["currentSituation", "future", "career", "study", "wealth", "love", "children", "health", "travel", "disputes", "graves", "house", "lostProperty", "documents"]
-          }
-        },
-        required: ["hexagramNumber", "hexagramName", "hexagramCode", "innerTrigram", "outerTrigram", "isYinOrYang", "symbolism", "lucThan", "lucThu", "diaChi", "yiJingMeaning", "divinationMeaning", "specificContexts"]
-      }
+            }
+        }
+    });
+
+    if (!response.text) {
+        throw new Error("Không nhận được luận giải từ chuyên gia.");
     }
-  });
 
-  if (!response.text) {
-    throw new Error("Không thể luận giải quẻ.");
-  }
-
-  return JSON.parse(response.text) as IChingResult;
+    return JSON.parse(response.text) as IChingResult;
 };
 
 export const generateHexagramImage = async (hexNumber: number, hexName: string, symbolism: string): Promise<string | undefined> => {
+  const ai = getAI();
   const prompt = `Artistic ink wash painting of I Ching Hexagram ${hexNumber} "${hexName}". Symbolism: ${symbolism}. Minimalist, abstract, black and white, traditional chinese art style, high contrast, clean background.`;
   
   const getUrlFromResponse = (response: any) => {
@@ -262,10 +240,7 @@ export const generateHexagramImage = async (hexNumber: number, hexName: string, 
   }
 
   // STRATEGY 2: Search for an image (Google Search) - Returns URL
-  // Warning: Search URLs can be unstable or have hotlinking protection.
-  // We prefer Wikimedia or reliable sources.
   try {
-    console.log("Attempting to search for image...");
     const searchResponse = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Find a direct public image URL (jpg/png) for "I Ching Hexagram ${hexNumber} ${hexName}" or "Kinh Dịch ${hexName}". 
@@ -287,6 +262,42 @@ export const generateHexagramImage = async (hexNumber: number, hexName: string, 
       console.warn("Search Attempt failed", e);
   }
 
-  // If both fail, return undefined to trigger client-side SVG fallback
   return undefined;
 }
+
+export const describeImage = async (imageBase64: string): Promise<string> => {
+    const ai = getAI();
+    try {
+        // If data uri, strip header
+        const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+        let mimeType = "image/png";
+        if (imageBase64.includes(';')) {
+            const matches = imageBase64.match(/data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,/);
+            if (matches && matches[1]) {
+                mimeType = matches[1];
+            }
+        }
+
+        const prompt = "Hãy mô tả chi tiết bức tranh này bằng tiếng Việt. Tập trung vào các yếu tố nghệ thuật, ý nghĩa tượng trưng của Kinh Dịch mà bạn cảm nhận được, và cảm xúc mà bức tranh mang lại.";
+
+        const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: {
+                parts: [
+                    { text: prompt },
+                    {
+                        inlineData: {
+                            mimeType: mimeType,
+                            data: base64Data
+                        }
+                    }
+                ]
+            }
+        });
+
+        return response.text || "Không thể mô tả hình ảnh này.";
+    } catch (e) {
+        console.error("Describe image error:", e);
+        return "Xin lỗi, đã xảy ra lỗi khi phân tích hình ảnh.";
+    }
+};

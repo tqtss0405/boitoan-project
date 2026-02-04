@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { TossResult, IChingResult } from '../types';
-import { consultIChing, generateHexagramImage } from '../services/geminiService';
-import { Loader2, RefreshCcw, Scroll, Circle, ImageIcon, BookOpen, ArrowRight, Quote, BookMarked, MessageSquareQuote, ImageOff, Wand2 } from 'lucide-react';
+import type { TossResult, IChingResult } from '../types';
+import { consultIChing, generateHexagramImage, describeImage } from '../services/geminiService';
+import { Loader2, RefreshCcw, Scroll, Circle, ImageIcon, BookOpen, ArrowRight, Quote, BookMarked, MessageSquareQuote, ImageOff, Wand2, Zap, Download, Eye, X } from 'lucide-react';
 
 // Internal component to render Hexagram SVG
 const HexagramSVG: React.FC<{ lines: TossResult[] }> = ({ lines }) => {
@@ -11,7 +11,7 @@ const HexagramSVG: React.FC<{ lines: TossResult[] }> = ({ lines }) => {
   const displayLines = [...lines].reverse();
 
   return (
-    <div className="w-full h-full bg-paper-bg flex items-center justify-center p-6 border-4 border-double border-orient-gold/20">
+    <div id="hexagram-svg-container" className="w-full h-full bg-paper-bg flex items-center justify-center p-6 border-4 border-double border-orient-gold/20">
         <svg viewBox="0 0 100 100" className="w-full h-full max-w-[200px]">
         {displayLines.map((line, index) => {
             // Determine if the line is Yang (Solid) or Yin (Broken) in the Main Hexagram
@@ -49,15 +49,17 @@ const KinhDich: React.FC = () => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [result, setResult] = useState<IChingResult | null>(null);
   const [loading, setLoading] = useState(false);
+  
+  // Image states
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [descLoading, setDescLoading] = useState(false);
+  const [description, setDescription] = useState<string | null>(null);
+
   const detailsRef = useRef<HTMLDivElement>(null);
 
-  const tossCoins = () => {
-    if (step >= 6) return;
-    setIsAnimating(true);
-
-    setTimeout(() => {
+  // Helper function to generate a single line result
+  const generateLine = (): TossResult => {
       const c1 = Math.random() < 0.5 ? 0 : 1;
       const c2 = Math.random() < 0.5 ? 0 : 1;
       const c3 = Math.random() < 0.5 ? 0 : 1;
@@ -94,26 +96,50 @@ const KinhDich: React.FC = () => {
           isChanging = false;
           break;
       }
+      return { val, label, isYang, isChanging };
+  };
 
-      const newLine: TossResult = { val, label, isYang, isChanging };
-      
+  const tossCoins = () => {
+    if (step >= 6) return;
+    setIsAnimating(true);
+
+    setTimeout(() => {
+      const newLine = generateLine();
       setLines(prev => [...prev, newLine]);
       setStep(prev => prev + 1);
       setIsAnimating(false);
     }, 800); // Animation duration
   };
 
+  const quickToss = () => {
+      if (step >= 6) return;
+      setIsAnimating(true);
+
+      // Simulate tossing all remaining lines
+      setTimeout(() => {
+          const linesNeeded = 6 - lines.length;
+          const newLines: TossResult[] = [];
+          for (let i = 0; i < linesNeeded; i++) {
+              newLines.push(generateLine());
+          }
+          setLines(prev => [...prev, ...newLines]);
+          setStep(6);
+          setIsAnimating(false);
+      }, 600);
+  };
+
   const handleInterpret = async () => {
     setLoading(true);
     setResult(null); // Clear previous result
     setImageError(false); // Reset image error
+    setDescription(null); // Reset description
     try {
-      // 1. Get Text Result
+      // 1. Get Text Result (Now from Local JSON - Instant)
       const data = await consultIChing(lines, "");
       setResult(data);
       setLoading(false);
 
-      // 2. Trigger Image Generation
+      // 2. Trigger Image Generation (Async - Background)
       await handleGenerateImage(data);
     } catch (e) {
       console.error(e);
@@ -126,6 +152,7 @@ const KinhDich: React.FC = () => {
     setImageLoading(true);
     // Optimistically reset error state
     setImageError(false);
+    setDescription(null); // Reset description when new image is generated
     try {
         const imgUrl = await generateHexagramImage(data.hexagramNumber, data.hexagramName, data.symbolism);
         if (imgUrl) {
@@ -142,11 +169,92 @@ const KinhDich: React.FC = () => {
     }
   };
 
+  const handleDescribeImage = async () => {
+    if (!result?.imageUrl || imageError) {
+        alert("Không có hình ảnh hợp lệ để mô tả.");
+        return;
+    }
+    
+    setDescLoading(true);
+    setDescription(null);
+
+    try {
+        let base64 = "";
+        
+        // Scenario 1: Image is already Base64 (Data URL)
+        if (result.imageUrl.startsWith('data:')) {
+            base64 = result.imageUrl;
+        } 
+        // Scenario 2: Image is URL (From Google Search)
+        else if (result.imageUrl.startsWith('http')) {
+             try {
+                // Try to fetch via fetch API (Might fail CORS)
+                const response = await fetch(result.imageUrl);
+                const blob = await response.blob();
+                base64 = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+             } catch (err) {
+                 console.error("Failed to fetch image for description:", err);
+                 alert("Không thể phân tích ảnh từ nguồn bên ngoài do hạn chế bảo mật.");
+                 setDescLoading(false);
+                 return;
+             }
+        }
+
+        if (base64) {
+            const desc = await describeImage(base64);
+            setDescription(desc);
+        }
+    } catch (error) {
+        console.error(error);
+        alert("Đã xảy ra lỗi khi phân tích hình ảnh.");
+    } finally {
+        setDescLoading(false);
+    }
+  };
+
+  const handleDownloadImage = () => {
+      if (!result) return;
+      
+      let downloadUrl = "";
+      let filename = `Que_Kinh_Dich_So_${result.hexagramNumber}.png`;
+
+      // Case 1: AI Generated Image exists
+      if (result.imageUrl && !imageError) {
+          downloadUrl = result.imageUrl;
+      } 
+      // Case 2: SVG Fallback (Create a Blob from SVG content)
+      else {
+          const svgElement = document.querySelector("#hexagram-svg-container svg");
+          if (svgElement) {
+              const svgData = new XMLSerializer().serializeToString(svgElement);
+              const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+              downloadUrl = URL.createObjectURL(blob);
+              filename = `Que_Kinh_Dich_So_${result.hexagramNumber}.svg`;
+          } else {
+              alert("Chưa có ảnh để tải về.");
+              return;
+          }
+      }
+
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+  };
+
   const reset = () => {
     setStep(0);
     setLines([]);
     setResult(null);
     setImageError(false);
+    setDescription(null);
   };
 
   const scrollToDetails = () => {
@@ -192,9 +300,11 @@ const KinhDich: React.FC = () => {
         <td className="p-2 text-center text-gray-500 font-serif">
           {index + 1}
         </td>
-        <td className="p-2 text-center text-xs md:text-sm whitespace-nowrap">
+        {/* Column 2: Lục Thú (Thanh Long...) */}
+        <td className="p-2 text-center text-gray-700 font-medium text-xs md:text-sm whitespace-nowrap">
           {result?.lucThu?.[index] || "-"}
         </td>
+        {/* Column 3: Lục Thân (Phụ Mẫu...) */}
         <td className="p-2 text-center font-bold text-orient-red text-xs md:text-sm whitespace-nowrap">
           {result?.lucThan?.[index] || "-"}
         </td>
@@ -253,26 +363,38 @@ const KinhDich: React.FC = () => {
              </div>
 
              {/* Controls */}
-             <div className="flex justify-center">
+             <div className="flex flex-col items-center gap-4">
                {step < 6 ? (
-                  <button
-                    onClick={tossCoins}
-                    disabled={isAnimating}
-                    className={`relative w-32 h-32 rounded-full border-4 flex items-center justify-center transition-all transform active:scale-95 ${
-                      isAnimating 
-                      ? 'border-gray-300 bg-gray-100' 
-                      : 'border-orient-red bg-orient-red text-white hover:bg-red-800 shadow-lg hover:shadow-orient-red/50'
-                    }`}
-                  >
-                    {isAnimating ? (
-                      <RefreshCcw className="w-10 h-10 animate-spin text-gray-400" />
-                    ) : (
-                      <div className="flex flex-col items-center">
-                        <span className="text-3xl font-serif font-bold">{6 - step}</span>
-                        <span className="text-xs uppercase mt-1">Gieo Lần</span>
-                      </div>
-                    )}
-                  </button>
+                  <div className="flex flex-col items-center gap-3">
+                    <button
+                        onClick={tossCoins}
+                        disabled={isAnimating}
+                        className={`relative w-32 h-32 rounded-full border-4 flex items-center justify-center transition-all transform active:scale-95 ${
+                        isAnimating 
+                        ? 'border-gray-300 bg-gray-100' 
+                        : 'border-orient-red bg-orient-red text-white hover:bg-red-800 shadow-lg hover:shadow-orient-red/50'
+                        }`}
+                    >
+                        {isAnimating ? (
+                        <RefreshCcw className="w-10 h-10 animate-spin text-gray-400" />
+                        ) : (
+                        <div className="flex flex-col items-center">
+                            <span className="text-3xl font-serif font-bold">{6 - step}</span>
+                            <span className="text-xs uppercase mt-1">Gieo Lần</span>
+                        </div>
+                        )}
+                    </button>
+                    
+                    {/* Quick Toss Option - Allows user to finish remaining lines instantly */}
+                    <button 
+                        onClick={quickToss}
+                        disabled={isAnimating}
+                        className="flex items-center gap-2 px-6 py-2 bg-white text-gray-600 rounded-full hover:bg-orient-red hover:text-white transition-all text-sm font-medium border border-gray-200 shadow-sm"
+                    >
+                        <Zap className="w-4 h-4" />
+                        {step === 0 ? "Gieo 1 Lần (6 Hào)" : "Gieo Nhanh Phần Còn Lại"}
+                    </button>
+                  </div>
                ) : (
                  <button
                    onClick={handleInterpret}
@@ -295,7 +417,7 @@ const KinhDich: React.FC = () => {
            <div className="bg-white p-4 md:p-8 rounded-2xl shadow-lg border-t-4 border-orient-red flex flex-col xl:flex-row items-stretch gap-8 overflow-hidden">
               
               {/* Column 1: Detailed Table (Updated Layout) */}
-              <div className="w-full xl:w-auto flex flex-col bg-white rounded-lg border border-orient-gold/30 shrink-0 self-start overflow-hidden">
+              <div className="w-full xl:w-auto flex flex-col bg-white rounded-lg border border-orient-gold/30 shrink-0 self-start overflow-hidden order-2 xl:order-1">
                  <div className="bg-gray-100 p-3 text-center border-b border-gray-200">
                     <h3 className="font-bold text-orient-red uppercase text-sm">Cấu Trúc Quẻ</h3>
                  </div>
@@ -327,7 +449,7 @@ const KinhDich: React.FC = () => {
               </div>
 
               {/* Column 2: Generated Image */}
-              <div className="w-full xl:w-1/4 flex flex-col gap-2 shrink-0">
+              <div className="w-full xl:w-1/4 flex flex-col gap-2 shrink-0 order-1 xl:order-2">
                   <div className="aspect-[3/4] w-full rounded-lg overflow-hidden bg-gray-100 border border-gray-200 relative shadow-inner flex items-center justify-center group">
                       {result?.imageUrl && !imageError ? (
                         <>
@@ -337,8 +459,16 @@ const KinhDich: React.FC = () => {
                             onError={handleImageError}
                             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                             />
-                            {/* Regenerate Button Overlay */}
-                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {/* Overlay Controls */}
+                            <div className="absolute top-2 right-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+                                <button 
+                                    onClick={handleDescribeImage}
+                                    disabled={descLoading}
+                                    title="Mô tả chi tiết hình ảnh (AI)"
+                                    className="p-2 bg-white/80 hover:bg-white rounded-full text-orient-red shadow-md backdrop-blur-sm"
+                                >
+                                    {descLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Eye className="w-4 h-4" />}
+                                </button>
                                 <button 
                                     onClick={() => result && handleGenerateImage(result)}
                                     disabled={imageLoading}
@@ -361,8 +491,8 @@ const KinhDich: React.FC = () => {
                              // Internal Hexagram SVG Fallback
                              <>
                                 <HexagramSVG lines={lines} />
-                                {/* Regenerate Button on top of Fallback */}
-                                <div className="absolute top-2 right-2">
+                                {/* Overlay Buttons on top of Fallback */}
+                                <div className="absolute top-2 right-2 flex gap-2">
                                     <button 
                                         onClick={() => result && handleGenerateImage(result)}
                                         disabled={imageLoading}
@@ -385,11 +515,37 @@ const KinhDich: React.FC = () => {
                             </p>
                         </div>
                       )}
+
+                       {/* Description Overlay */}
+                        {description && (
+                            <div className="absolute inset-0 bg-black/80 p-4 overflow-y-auto animate-fade-in backdrop-blur-sm text-left">
+                                <div className="flex justify-between items-start mb-2">
+                                    <h5 className="text-white font-bold text-sm flex items-center gap-2">
+                                        <Eye className="w-4 h-4" /> Phân Tích Ảnh
+                                    </h5>
+                                    <button onClick={() => setDescription(null)} className="text-white/70 hover:text-white">
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
+                                <p className="text-white/90 text-sm leading-relaxed font-serif">
+                                    {description}
+                                </p>
+                            </div>
+                        )}
                   </div>
+                  
+                  {/* Explicit Download Button */}
+                  <button 
+                    onClick={handleDownloadImage}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors shadow-sm text-sm"
+                  >
+                     <Download className="w-4 h-4" />
+                     Tải Ảnh Về
+                  </button>
               </div>
 
               {/* Column 3: Text Info - UPDATED */}
-              <div className="flex-1 flex flex-col justify-center min-w-0">
+              <div className="flex-1 flex flex-col justify-center min-w-0 order-3">
                   <div className="text-center lg:text-left">
                     <div className="flex items-center justify-center lg:justify-start gap-2 mb-3 flex-wrap">
                          <span className="inline-block px-3 py-1 bg-gray-100 text-gray-600 text-xs font-bold uppercase tracking-widest rounded-full whitespace-nowrap">
