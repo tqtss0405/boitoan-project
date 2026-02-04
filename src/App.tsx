@@ -122,7 +122,7 @@ const App: React.FC = () => {
       {/* Footer */}
       <footer className="mt-auto border-t border-gray-200 py-8 text-center text-gray-500 text-sm px-4">
           <p className="mb-2">
-            Ứng dụng sử dụng trí tuệ nhân tạo để luận giải dựa trên dữ liệu cổ học.
+           Luận giải dựa trên dữ liệu cổ học.
           </p>
           <p className="font-serif text-orient-red/60 text-xs">
             © {new Date().getFullYear()} Duyên Phận & Huyền Cơ.
