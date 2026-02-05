@@ -2,6 +2,8 @@ import React, { useState, useRef } from 'react';
 import type { TossResult, IChingResult } from '../types';
 import { getHexagramBasicInfo } from '../services/geminiService';
 import { RefreshCcw, Scroll, Circle, BookOpen, Zap, Image as ImageIcon, X, ZoomIn, Download, Loader2 } from 'lucide-react';
+// QUAN TRỌNG: Import thư viện mới
+import { toPng } from 'html-to-image';
 
 const HexagramSVG: React.FC<{ lines: TossResult[] }> = ({ lines }) => {
   const displayLines = [...lines].reverse();
@@ -83,10 +85,8 @@ const KinhDich: React.FC = () => {
   };
 
   const handleInterpret = () => {
-    // Chỉ lấy dữ liệu từ file store, không gọi AI
     const basicInfo = getHexagramBasicInfo(lines);
     setResult(basicInfo); 
-    // Cuộn xuống phần chi tiết sau một chút
     setTimeout(() => {
         detailsRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
@@ -99,45 +99,33 @@ const KinhDich: React.FC = () => {
     setIsZoomed(false);
   };
   
+  // --- CẬP NHẬT HÀM TẢI ẢNH MỚI (html-to-image) ---
   const handleDownload = async () => {
     if (!resultRef.current || !result) return;
     
-    // Access html2canvas from window
-    const html2canvas = (window as any).html2canvas;
-    
-    if (!html2canvas) {
-        alert("Thư viện tạo ảnh chưa tải xong. Vui lòng thử lại sau vài giây.");
-        return;
-    }
-
     setIsDownloading(true);
-    
     try {
-        const canvas = await html2canvas(resultRef.current, {
-            scale: 3, // Tăng độ phân giải lên 3x để ảnh nét hơn
-            useCORS: true, // Cho phép tải ảnh từ nguồn khác (nếu có)
+        // 1. Chờ font chữ tải xong
+        await document.fonts.ready;
+        // 2. Chờ UI ổn định
+        await new Promise(resolve => setTimeout(resolve, 200));
+
+        const dataUrl = await toPng(resultRef.current, {
+            cacheBust: true,
             backgroundColor: '#F9F5EB', // Màu nền giấy
-            onclone: (clonedDoc: Document) => {
-                // Xóa các class animation trong bản clone để tránh lỗi hiển thị mờ/nhòe do transform/opacity
-                const elements = clonedDoc.querySelectorAll('.animate-slide-up, .animate-fade-in');
-                elements.forEach((el) => {
-                    el.classList.remove('animate-slide-up');
-                    el.classList.remove('animate-fade-in');
-                    (el as HTMLElement).style.opacity = '1';
-                    (el as HTMLElement).style.transform = 'none';
-                });
-            },
-            ignoreElements: (element: HTMLElement) => {
-                // Ẩn các nút khi chụp ảnh
-                return element.tagName === 'BUTTON' && !element.classList.contains('do-not-ignore');
+            pixelRatio: 3, // Giữ độ nét cao
+            // Bộ lọc: Tự động bỏ qua các nút bấm khi chụp
+            filter: (node) => {
+                const element = node as HTMLElement;
+                return element.tagName !== 'BUTTON';
             }
         });
 
-        const image = canvas.toDataURL("image/png", 1.0);
         const link = document.createElement("a");
-        link.href = image;
         link.download = `Que-${result.hexagramNumber}-${result.hexagramName.replace(/\s+/g, '-')}.png`;
+        link.href = dataUrl;
         link.click();
+
     } catch (error) {
         console.error("Lỗi khi tạo ảnh:", error);
         alert("Không thể tạo ảnh lúc này. Vui lòng thử lại.");
@@ -212,14 +200,13 @@ const KinhDich: React.FC = () => {
            <div className="bg-white p-6 md:p-10 rounded-2xl shadow-xl border border-gray-200">
              <div className="grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-12 items-start">
                 
-                {/* --- CỘT TRÁI: CẤU TRÚC (Chiếm 4 phần) --- */}
+                {/* --- CỘT TRÁI --- */}
                 <div className="md:col-span-4 flex flex-col gap-6">
                     <div className="flex items-center gap-2 mb-2">
                         <div className="w-1 h-6 bg-orient-red rounded-full"></div>
                         <h3 className="font-bold text-gray-800 uppercase text-sm tracking-wide">Cấu Trúc Quẻ</h3>
                     </div>
                     
-                    {/* Card Cấu Trúc */}
                     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
                         <table className="w-full text-sm border-collapse">
                             <thead>
@@ -235,22 +222,20 @@ const KinhDich: React.FC = () => {
                         </table>
                     </div>
 
-                    {/* Card Đồ Hình */}
                     <div className="flex flex-col items-center">
                         <HexagramSVG lines={lines} />
                         <span className="text-xs text-gray-400 mt-2 font-serif italic">Đồ hình {result.hexagramName}</span>
                     </div>
                 </div>
 
-                {/* --- CỘT PHẢI: HÌNH ẢNH & THÔNG TIN (Chiếm 8 phần) --- */}
+                {/* --- CỘT PHẢI --- */}
                 <div className="md:col-span-8 flex flex-col">
                     
-                    {/* 1. Hình ảnh Minh Họa (Ở trên cùng) */}
+                    {/* Minh Họa */}
                     <div 
                         className="w-full relative mb-8 group cursor-zoom-in"
                         onClick={() => setIsZoomed(true)}
                     >
-                         {/* Khung viền trang trí cho ảnh */}
                          <div className="absolute inset-0 border-2 border-orient-gold/20 transform translate-x-2 translate-y-2 rounded-xl"></div>
                          <div className="relative bg-stone-100 rounded-xl overflow-hidden shadow-lg border border-stone-200 aspect-[16/9] flex items-center justify-center">
                             <img 
@@ -258,35 +243,32 @@ const KinhDich: React.FC = () => {
                                 alt={`Minh họa quẻ ${result.hexagramName}`}
                                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                                 onError={(e) => {
-                                    // Fallback nếu không có ảnh: Hiện placeholder đẹp
                                     const target = e.target as HTMLImageElement;
                                     target.style.display = 'none';
                                     target.parentElement?.classList.add('flex', 'flex-col', 'items-center', 'justify-center', 'bg-stone-50');
                                 }}
                             />
-                            {/* Fallback content hiển thị khi ảnh ẩn đi (do error) hoặc đang load */}
                             <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 z-[-1] pointer-events-none group-has-[img[style*='none']]:opacity-100 group-has-[img[style*='none']]:z-10">
                                 <ImageIcon className="w-16 h-16 text-gray-300 mb-2" />
                                 <span className="text-gray-400 font-serif italic">Đang cập nhật hình ảnh minh họa</span>
                             </div>
                             
-                            {/* Zoom Icon Indicator */}
                             <div className="absolute bottom-3 right-3 bg-black/60 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                                 <ZoomIn className="w-5 h-5" />
                             </div>
                          </div>
                     </div>
 
-                    {/* 2. Thông tin Tên Quẻ (Ở dưới ảnh) */}
+                    {/* Tên Quẻ */}
                     <div className="text-center md:px-8 space-y-4">
                         <div className="flex flex-wrap items-center justify-center gap-3">
                              <span className="px-3 py-1 bg-stone-100 text-stone-600 text-xs font-bold rounded-full uppercase tracking-wider border border-stone-200">
                                 {result.hexagramCode}
                              </span>
                              <span className={`px-3 py-1 text-xs font-bold rounded-full uppercase tracking-wider border ${
-                                 result.isYinOrYang.includes('Cát') ? 'bg-green-50 text-green-700 border-green-200' :
-                                 result.isYinOrYang.includes('Hung') ? 'bg-red-50 text-red-700 border-red-200' :
-                                 'bg-blue-50 text-blue-700 border-blue-200'
+                                result.isYinOrYang.includes('Cát') ? 'bg-green-50 text-green-700 border-green-200' :
+                                result.isYinOrYang.includes('Hung') ? 'bg-red-50 text-red-700 border-red-200' :
+                                'bg-blue-50 text-blue-700 border-blue-200'
                              }`}>
                                 {result.isYinOrYang}
                              </span>
@@ -315,7 +297,7 @@ const KinhDich: React.FC = () => {
              </div>
            </div>
 
-           {/* Content Section (Chi tiết luận giải) */}
+           {/* Content Section */}
            <div ref={detailsRef} className="space-y-8 pt-4">
                 {/* 1. Meaning */}
                 <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 relative min-h-[300px]">
@@ -329,7 +311,6 @@ const KinhDich: React.FC = () => {
                         </div>
                         <div>
                             <h4 className="text-orient-red font-bold text-sm uppercase mb-4 flex items-center gap-2"><Scroll className="w-4 h-4" /> Hào Từ (Chi Tiết 6 Hào)</h4>
-                           
                             <ul className="space-y-4">
                                 {result.yiJingMeaning.linesMeaning && result.yiJingMeaning.linesMeaning.length > 0 ? result.yiJingMeaning.linesMeaning.map((line, idx) => (
                                     <li key={idx} className={`bg-stone-50 p-4 rounded-lg border ${lines[idx]?.isChanging ? 'border-orient-red/40 bg-red-50/20' : 'border-stone-200'}`}>

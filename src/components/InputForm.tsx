@@ -38,7 +38,7 @@ const InputForm: React.FC<InputFormProps> = ({ onSubmit, isLoading }) => {
   const inputClassName = "w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-orient-red focus:border-transparent outline-none transition bg-stone-50 text-black placeholder-gray-400 font-medium text-lg text-center tracking-widest";
 
   return (
-    <div className="bg-white p-6 md:p-10 rounded-2xl shadow-xl border border-orient-gold/30 max-w-3xl mx-auto relative overflow-hidden animate-slide-up">
+    <div className="bg-white p-6 md:p-10 rounded-2xl shadow-xl border border-orient-gold/30 max-w-7xl mx-auto relative overflow-hidden animate-slide-up">
       {/* Decorative corner patterns */}
       <div className="absolute top-0 left-0 w-20 h-20 border-t-4 border-l-4 border-orient-red opacity-10 rounded-tl-3xl"></div>
       <div className="absolute top-0 right-0 w-20 h-20 border-t-4 border-r-4 border-orient-red opacity-10 rounded-tr-3xl"></div>

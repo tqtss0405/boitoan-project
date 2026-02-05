@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { CompatibilityResult, CompatibilityDetail } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { CheckCircle2, AlertCircle, MinusCircle, Star, Download, Loader2 } from 'lucide-react';
-// QUAN TRỌNG: Dùng bản pro để sửa lỗi màu oklch của Tailwind v4
-import html2canvas from 'html2canvas-pro';
+// QUAN TRỌNG: Import trực tiếp function toPng
+import { toPng } from 'html-to-image';
 
 interface ResultDisplayProps {
   result: CompatibilityResult;
@@ -52,6 +52,7 @@ const DetailRow: React.FC<{ detail: CompatibilityDetail; index: number }> = ({ d
 
 const ResultDisplay: React.FC<ResultDisplayProps> = ({ result }) => {
   const [isCapturing, setIsCapturing] = useState(false);
+  const captureRef = useRef<HTMLDivElement>(null);
 
   const chartData = [
     { name: 'Score', value: result.overallScore },
@@ -60,49 +61,48 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ result }) => {
   
   const scoreColor = result.overallScore >= 8 ? '#166534' : result.overallScore >= 5 ? '#ca8a04' : '#991b1b';
 
-  // --- HÀM TẢI ẢNH (Đã fix lỗi Recharts) ---
-  const handleDownload = async () => {
-    const element = document.getElementById('result-capture-area');
-    if (!element) return;
+  // --- HÀM TẢI ẢNH MỚI (Rất đơn giản) ---
+  const handleDownload = useCallback(async () => {
+    if (!captureRef.current) {
+        alert("Chưa tìm thấy vùng nội dung để chụp.");
+        return;
+    }
 
     setIsCapturing(true);
     try {
-      // Đợi 1 chút để UI ổn định
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Logic mới: Không kiểm tra thư viện nữa, gọi thẳng hàm
+      console.log("Bắt đầu tạo ảnh...");
+      
+      // Chờ 1 chút cho UI ổn định
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-      const canvas = await html2canvas(element, {
-        scale: 2, // Tăng độ nét
-        useCORS: true,
-        backgroundColor: '#F9F5EB', // Màu nền giấy
-        logging: false,
-        // Sửa lỗi font chữ bị lệch khi chụp
-        onclone: (clonedDoc) => {
-            const clonedElement = clonedDoc.getElementById('result-capture-area');
-            if (clonedElement) {
-                clonedElement.style.padding = '20px';
-            }
-        }
+      const dataUrl = await toPng(captureRef.current, {
+        cacheBust: true,
+        backgroundColor: '#F9F5EB',
+        pixelRatio: 2,
+        style: { margin: '0' }
       });
 
       const link = document.createElement('a');
-      link.download = `Ket-Qua-Xem-Tuoi-${result.husbandYear}-${result.wifeYear}.png`;
-      link.href = canvas.toDataURL('image/png');
+      link.download = `Ket-Qua-${result.husbandYear}-${result.wifeYear}.png`;
+      link.href = dataUrl;
       link.click();
-    } catch (error) {
-      console.error('Lỗi khi tải ảnh:', error);
-      alert('Không thể tạo ảnh lúc này. Vui lòng thử lại.');
+
+    } catch (error: any) {
+      console.error('Lỗi thực sự:', error);
+      alert(`Lỗi khi tải: ${error.message}`);
     } finally {
       setIsCapturing(false);
     }
-  };
+  }, [result]);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-fade-in w-full overflow-hidden">
+    <div className="max-w-6xl mx-auto space-y-8 animate-fade-in w-full overflow-hidden">
       
-      {/* Vùng cần chụp ảnh - Thêm ID để html2canvas tìm thấy */}
-      <div id="result-capture-area" className="space-y-8 bg-paper-bg p-1 md:p-4 rounded-2xl">
+      {/* Vùng chụp ảnh */}
+      <div ref={captureRef} className="space-y-8 bg-paper-bg p-4 rounded-2xl">
         
-        {/* Header Summary Card */}
+        {/* Header Summary */}
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-orient-gold/40">
           <div className="bg-orient-red p-4 text-white text-center">
               <h2 className="text-2xl font-serif font-bold break-words">Kết Quả Luận Giải</h2>
@@ -114,12 +114,8 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ result }) => {
           </div>
 
           <div className="p-6 md:p-8 flex flex-col md:flex-row items-center gap-8">
-              {/* Score Chart */}
-              {/* SỬA LỖI RECHARTS: Thêm style cứng width/height để html2canvas nhận diện được */}
-              <div 
-                className="flex-shrink-0 relative" 
-                style={{ width: '192px', height: '192px' }} 
-              >
+              {/* Chart */}
+              <div className="flex-shrink-0 relative mx-auto md:mx-0" style={{ width: '192px', height: '192px' }}>
                    <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
@@ -145,7 +141,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ result }) => {
                     </div>
               </div>
 
-              {/* Verbal Verdict */}
+              {/* Text */}
               <div className="flex-1 text-center md:text-left">
                   <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orient-gold/20 text-yellow-800 text-xs font-bold uppercase tracking-wider mb-2">
                       <Star className="w-3 h-3 fill-yellow-700" /> Tổng Quan
@@ -159,7 +155,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ result }) => {
           </div>
         </div>
 
-        {/* Detailed Analysis Grid */}
+        {/* Detail List */}
         <div className="grid grid-cols-1 gap-4">
           <h3 className="text-xl font-serif font-bold text-gray-800 border-l-4 border-orient-red pl-3 flex items-center">
               Chi Tiết 5 Yếu Tố
@@ -174,7 +170,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ result }) => {
         </div>
       </div>
 
-      {/* Nút tải ảnh (Đặt bên ngoài vùng chụp id="result-capture-area" để không bị chụp dính nút này) */}
+      {/* Nút tải ảnh */}
       <div className="flex justify-center mt-6">
         <button
           onClick={handleDownload}
@@ -184,7 +180,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ result }) => {
           {isCapturing ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
-              Đang tạo ảnh...
+              Đang xử lý... {/* CODE MỚI PHẢI HIỆN CHỮ NÀY */}
             </>
           ) : (
             <>

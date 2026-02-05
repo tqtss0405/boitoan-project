@@ -72,7 +72,7 @@ function App() {
             </div>
 
             {/* Tool tính toán */}
-            <section id="tool-app" className="max-w-4xl mx-auto my-8 bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+            <section id="tool-app" className="max-w-6xl mx-auto my-8 bg-white p-6 rounded-xl shadow-lg border border-gray-200">
               <h2 className="text-2xl font-bold text-center text-red-600 mb-6">
                 Nhập thông tin vợ chồng
               </h2>
@@ -97,7 +97,7 @@ function App() {
 
         {/* TAB 2: KINH DỊCH */}
         {activeTab === 'kinhdich' && (
-          <div className="animate-fade-in max-w-4xl mx-auto">
+          <div className="animate-fade-in max-w-7xl mx-auto">
             <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
               <h2 className="text-2xl font-bold text-center text-red-600 mb-6">
                 Gieo Quẻ Hỏi Việc
