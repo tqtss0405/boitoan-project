@@ -1,5 +1,3 @@
-import React from 'react';
-
 export const HomeContent = () => {
   return (
     <div className="w-full prose lg:prose-xl max-w-none mx-auto p-4 text-gray-800 bg-white rounded-lg shadow-sm">
