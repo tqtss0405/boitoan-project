@@ -1,23 +1,43 @@
 // api/analyze.js
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export default async function handler(req, res) {
-  // Chỉ chấp nhận method POST
+  // 1. Cấu hình CORS để cho phép frontend gọi được (Phòng hờ lỗi chặn truy cập)
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
+
+  // Xử lý preflight request (cho trình duyệt)
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
+  // 2. Kiểm tra Method
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
   try {
-    const { husbandYear, wifeYear, hCanChi, wCanChi } = req.body;
-
-    // Lấy API Key từ biến môi trường server (Không có tiền tố VITE_)
+    // 3. Lấy Key
     const apiKey = process.env.GEMINI_API_KEY;
-
     if (!apiKey) {
-      return res.status(500).json({ error: 'Server API Key missing' });
+      console.error("LỖI: Chưa có GEMINI_API_KEY");
+      return res.status(500).json({ error: 'Server Config Error: Missing API Key' });
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const { husbandYear, wifeYear, hCanChi, wCanChi } = req.body;
+
+    // 4. Khởi tạo AI (Dùng thư viện GoogleGenerativeAI chuẩn)
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-1.5-flash", // Dùng model 1.5 Flash cho nhanh và rẻ
+      generationConfig: { responseMimeType: "application/json" }
+    });
 
     const prompt = `
       Đóng vai chuyên gia Phong Thủy, xem tuổi vợ chồng:
@@ -25,28 +45,32 @@ export default async function handler(req, res) {
       - Vợ: ${wifeYear} (${wCanChi})
       
       Phân tích 5 yếu tố (Mệnh, Can, Chi, Cung Phi, Thiên Mệnh).
-      Trả về kết quả dưới dạng JSON thuần túy, không có markdown code blocks.
+      Trả về kết quả JSON thuần túy theo cấu trúc:
+      {
+        "husbandYear": number,
+        "husbandLunarYear": string,
+        "wifeYear": number,
+        "wifeLunarYear": string,
+        "overallScore": number,
+        "verdict": string,
+        "detailedAnalysis": [
+            { "criteria": string, "husbandInfo": string, "wifeInfo": string, "assessment": string, "score": number, "explanation": string }
+        ],
+        "advice": string
+      }
     `;
 
-    // Gọi Gemini (Lưu ý: Cấu hình schema giống hệt code cũ của bạn)
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash", // Hoặc model bạn muốn dùng
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        // ... (Bạn có thể copy phần responseSchema từ file cũ vào đây nếu muốn strict mode)
-      }
-    });
-
-    if (!response.text) throw new Error("No response");
-
-    const cleanJson = response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+    
+    // Parse JSON an toàn
+    const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
     const data = JSON.parse(cleanJson);
 
     return res.status(200).json(data);
 
   } catch (error) {
-    console.error("API Error:", error);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    console.error("Server API Error Details:", error); // Dòng này sẽ hiện trong Vercel Logs
+    return res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
 }
