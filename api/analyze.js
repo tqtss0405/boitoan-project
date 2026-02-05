@@ -35,7 +35,7 @@ export default async function handler(req, res) {
     // 4. Khởi tạo AI (Dùng thư viện GoogleGenerativeAI chuẩn)
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash", // Dùng model 1.5 Flash cho nhanh và rẻ
+      model: "gemini-2.5-flash", // Dùng model 1.5 Flash cho nhanh và rẻ
       generationConfig: { responseMimeType: "application/json" }
     });
 
