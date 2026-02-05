@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { CompatibilityResult, FormData, IChingResult, TossResult, SpecificContexts } from "../types";
+import type { CompatibilityResult, FormData, IChingResult, TossResult } from "../types";
 import { lookupHexagram } from "../data/hexagram";
 // Helper function to get the AI instance. 
 // Initializes lazily to prevent top-level crashes if API_KEY is missing during development.

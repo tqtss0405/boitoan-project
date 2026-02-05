@@ -1,6 +1,6 @@
 import React from 'react';
 import { CompatibilityResult, CompatibilityDetail } from '../types';
-import { PieChart, Pie, Cell, ResponsiveContainer, Label } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { CheckCircle2, AlertCircle, MinusCircle, Star } from 'lucide-react';
 
 interface ResultDisplayProps {
