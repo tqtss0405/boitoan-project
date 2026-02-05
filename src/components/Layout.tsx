@@ -1,4 +1,3 @@
-import React from 'react';
 
 // --- HEADER CHUNG (Phong cách Duyên Phận) ---
 export const Header = () => {
