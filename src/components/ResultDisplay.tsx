@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CompatibilityResult, CompatibilityDetail } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
-import { CheckCircle2, AlertCircle, MinusCircle, Star } from 'lucide-react';
+import { CheckCircle2, AlertCircle, MinusCircle, Star, Download, Loader2 } from 'lucide-react';
+// QUAN TRỌNG: Dùng bản pro để sửa lỗi màu oklch của Tailwind v4
+import html2canvas from 'html2canvas-pro';
 
 interface ResultDisplayProps {
   result: CompatibilityResult;
@@ -49,6 +51,8 @@ const DetailRow: React.FC<{ detail: CompatibilityDetail; index: number }> = ({ d
 };
 
 const ResultDisplay: React.FC<ResultDisplayProps> = ({ result }) => {
+  const [isCapturing, setIsCapturing] = useState(false);
+
   const chartData = [
     { name: 'Score', value: result.overallScore },
     { name: 'Remaining', value: 10 - result.overallScore },
@@ -56,74 +60,139 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ result }) => {
   
   const scoreColor = result.overallScore >= 8 ? '#166534' : result.overallScore >= 5 ? '#ca8a04' : '#991b1b';
 
+  // --- HÀM TẢI ẢNH (Đã fix lỗi Recharts) ---
+  const handleDownload = async () => {
+    const element = document.getElementById('result-capture-area');
+    if (!element) return;
+
+    setIsCapturing(true);
+    try {
+      // Đợi 1 chút để UI ổn định
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const canvas = await html2canvas(element, {
+        scale: 2, // Tăng độ nét
+        useCORS: true,
+        backgroundColor: '#F9F5EB', // Màu nền giấy
+        logging: false,
+        // Sửa lỗi font chữ bị lệch khi chụp
+        onclone: (clonedDoc) => {
+            const clonedElement = clonedDoc.getElementById('result-capture-area');
+            if (clonedElement) {
+                clonedElement.style.padding = '20px';
+            }
+        }
+      });
+
+      const link = document.createElement('a');
+      link.download = `Ket-Qua-Xem-Tuoi-${result.husbandYear}-${result.wifeYear}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (error) {
+      console.error('Lỗi khi tải ảnh:', error);
+      alert('Không thể tạo ảnh lúc này. Vui lòng thử lại.');
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-fade-in w-full overflow-hidden">
       
-      {/* Header Summary Card */}
-      <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-orient-gold/40">
-        <div className="bg-orient-red p-4 text-white text-center">
-            <h2 className="text-2xl font-serif font-bold break-words">Kết Quả Luận Giải</h2>
-            <div className="flex justify-center gap-2 md:gap-8 mt-2 text-sm opacity-90 flex-wrap">
-                <span className="whitespace-nowrap">Chồng: {result.husbandLunarYear} ({result.husbandYear})</span>
-                <span className="hidden md:inline">•</span>
-                <span className="whitespace-nowrap">Vợ: {result.wifeLunarYear} ({result.wifeYear})</span>
-            </div>
+      {/* Vùng cần chụp ảnh - Thêm ID để html2canvas tìm thấy */}
+      <div id="result-capture-area" className="space-y-8 bg-paper-bg p-1 md:p-4 rounded-2xl">
+        
+        {/* Header Summary Card */}
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-orient-gold/40">
+          <div className="bg-orient-red p-4 text-white text-center">
+              <h2 className="text-2xl font-serif font-bold break-words">Kết Quả Luận Giải</h2>
+              <div className="flex justify-center gap-2 md:gap-8 mt-2 text-sm opacity-90 flex-wrap">
+                  <span className="whitespace-nowrap">Chồng: {result.husbandLunarYear} ({result.husbandYear})</span>
+                  <span className="hidden md:inline">•</span>
+                  <span className="whitespace-nowrap">Vợ: {result.wifeLunarYear} ({result.wifeYear})</span>
+              </div>
+          </div>
+
+          <div className="p-6 md:p-8 flex flex-col md:flex-row items-center gap-8">
+              {/* Score Chart */}
+              {/* SỬA LỖI RECHARTS: Thêm style cứng width/height để html2canvas nhận diện được */}
+              <div 
+                className="flex-shrink-0 relative" 
+                style={{ width: '192px', height: '192px' }} 
+              >
+                   <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={chartData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={80}
+                          startAngle={180}
+                          endAngle={0}
+                          paddingAngle={5}
+                          dataKey="value"
+                          stroke="none"
+                        >
+                          <Cell key="cell-0" fill={scoreColor} />
+                          <Cell key="cell-1" fill="#e5e7eb" />
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute top-2/3 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
+                      <span className="block text-4xl font-bold font-serif" style={{ color: scoreColor }}>{result.overallScore}</span>
+                      <span className="text-xs text-gray-400 uppercase">Trên 10</span>
+                    </div>
+              </div>
+
+              {/* Verbal Verdict */}
+              <div className="flex-1 text-center md:text-left">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orient-gold/20 text-yellow-800 text-xs font-bold uppercase tracking-wider mb-2">
+                      <Star className="w-3 h-3 fill-yellow-700" /> Tổng Quan
+                  </div>
+                  <h3 className="text-3xl font-serif font-bold text-gray-900 mb-3 break-words">{result.verdict}</h3>
+                  <p className="text-gray-600 leading-relaxed break-words">
+                      Hai bạn có số điểm tương hợp là <strong style={{ color: scoreColor }}>{result.overallScore}/10</strong>. 
+                      {result.advice}
+                  </p>
+              </div>
+          </div>
         </div>
 
-        <div className="p-6 md:p-8 flex flex-col md:flex-row items-center gap-8">
-            {/* Score Chart */}
-            <div className="w-48 h-48 flex-shrink-0 relative">
-                 <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={chartData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        startAngle={180}
-                        endAngle={0}
-                        paddingAngle={5}
-                        dataKey="value"
-                        stroke="none"
-                      >
-                        <Cell key="cell-0" fill={scoreColor} />
-                        <Cell key="cell-1" fill="#e5e7eb" />
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute top-2/3 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
-                    <span className="block text-4xl font-bold font-serif" style={{ color: scoreColor }}>{result.overallScore}</span>
-                    <span className="text-xs text-gray-400 uppercase">Trên 10</span>
+        {/* Detailed Analysis Grid */}
+        <div className="grid grid-cols-1 gap-4">
+          <h3 className="text-xl font-serif font-bold text-gray-800 border-l-4 border-orient-red pl-3 flex items-center">
+              Chi Tiết 5 Yếu Tố
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {result.detailedAnalysis.map((detail, idx) => (
+                  <div key={idx} className={idx === result.detailedAnalysis.length - 1 ? "md:col-span-2" : ""}>
+                     <DetailRow detail={detail} index={idx} />
                   </div>
-            </div>
-
-            {/* Verbal Verdict */}
-            <div className="flex-1 text-center md:text-left">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orient-gold/20 text-yellow-800 text-xs font-bold uppercase tracking-wider mb-2">
-                    <Star className="w-3 h-3 fill-yellow-700" /> Tổng Quan
-                </div>
-                <h3 className="text-3xl font-serif font-bold text-gray-900 mb-3 break-words">{result.verdict}</h3>
-                <p className="text-gray-600 leading-relaxed break-words">
-                    Hai bạn có số điểm tương hợp là <strong style={{ color: scoreColor }}>{result.overallScore}/10</strong>. 
-                    {result.advice}
-                </p>
-            </div>
+              ))}
+          </div>
         </div>
       </div>
 
-      {/* Detailed Analysis Grid */}
-      <div className="grid grid-cols-1 gap-4">
-        <h3 className="text-xl font-serif font-bold text-gray-800 border-l-4 border-orient-red pl-3 flex items-center">
-            Chi Tiết 5 Yếu Tố
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {result.detailedAnalysis.map((detail, idx) => (
-                <div key={idx} className={idx === result.detailedAnalysis.length - 1 ? "md:col-span-2" : ""}>
-                   <DetailRow detail={detail} index={idx} />
-                </div>
-            ))}
-        </div>
+      {/* Nút tải ảnh (Đặt bên ngoài vùng chụp id="result-capture-area" để không bị chụp dính nút này) */}
+      <div className="flex justify-center mt-6">
+        <button
+          onClick={handleDownload}
+          disabled={isCapturing}
+          className="flex items-center gap-2 px-6 py-3 bg-orient-red text-white rounded-full hover:bg-red-800 transition-colors shadow-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isCapturing ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Đang tạo ảnh...
+            </>
+          ) : (
+            <>
+              <Download className="w-5 h-5" />
+              Tải Ảnh Kết Quả
+            </>
+          )}
+        </button>
       </div>
 
     </div>
