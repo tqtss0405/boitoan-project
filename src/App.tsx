@@ -1,4 +1,4 @@
-import  { useState } from 'react';
+import { useState } from 'react';
 import InputForm from './components/InputForm';
 import ResultDisplay from './components/ResultDisplay';
 import KinhDich from './components/KinhDich'; // Import lại Kinh Dịch
@@ -35,13 +35,13 @@ function App() {
       <Header />
       {/* 2. Thanh Menu (Tabs) */}
       <div className="bg-white shadow-sm sticky top-0 z-10">
-        <div className="container mx-auto px-4">
+        <div className="max-w-7xl mx-auto px-4">
           <div className="flex space-x-4 justify-center md:justify-start">
             <button
               onClick={() => setActiveTab('home')}
               className={`flex items-center space-x-2 py-4 px-2 border-b-2 font-medium transition-colors ${activeTab === 'home'
-                  ? 'border-red-600 text-red-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                ? 'border-red-600 text-red-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
             >
               <Heart className="w-5 h-5" />
@@ -51,8 +51,8 @@ function App() {
             <button
               onClick={() => setActiveTab('kinhdich')}
               className={`flex items-center space-x-2 py-4 px-2 border-b-2 font-medium transition-colors ${activeTab === 'kinhdich'
-                  ? 'border-red-600 text-red-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                ? 'border-red-600 text-red-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
             >
               <BookOpen className="w-5 h-5" />
@@ -68,12 +68,12 @@ function App() {
         {activeTab === 'home' && (
           <div className="animate-fade-in">
             {/* Nội dung giới thiệu SEO */}
-          <div className="container mx-auto px-4 mb-12 max-w-7xl">
+            <div className="container mx-auto mb-12 max-w-7xl">
               <HomeContent />
             </div>
 
             {/* Tool tính toán */}
-            <section id="tool-app" className="max-w-6xl mx-auto my-8 bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+            <section id="tool-app" className="max-w-7xl mx-auto my-8 bg-white p-6 rounded-xl shadow-lg border border-gray-200">
               <h2 className="text-2xl font-bold text-center text-red-600 mb-6">
                 Nhập thông tin vợ chồng
               </h2>
@@ -92,17 +92,18 @@ function App() {
                 </div>
               )}
             </section>
-            
+
           </div>
         )}
 
         {/* TAB 2: KINH DỊCH */}
         {activeTab === 'kinhdich' && (
           <div className="animate-fade-in max-w-7xl mx-auto">
-            <div className="container mx-auto px-4 mb-12">
+            <div className="container px-4 mx-auto mb-12">
               <KinhDichContent />
             </div>
-            <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+            <div className="container px-4 mx-auto mb-12">
+              <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
               <h2 className="text-2xl font-bold text-center text-red-600 mb-6">
                 Gieo Quẻ Hỏi Việc
               </h2>
@@ -111,10 +112,11 @@ function App() {
               </p>
               <KinhDich />
             </div>
-           
+            </div>
+
           </div>
         )}
- <Footer />
+        <Footer />
       </main>
     </div>
   );
