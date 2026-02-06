@@ -7,6 +7,7 @@ import type { FormData, CompatibilityResult } from './types';
 import { BookOpen, Heart } from 'lucide-react'; // Icon cho menu
 import { HomeContent } from './components/HomeContent';
 import { Header, Footer } from './components/Layout';
+import { KinhDichContent } from './components/KinhDichContent';
 function App() {
   // State quản lý Tab đang chọn (Mặc định là 'home' - Xem tuổi)
   const [activeTab, setActiveTab] = useState<'home' | 'kinhdich'>('home');
@@ -98,6 +99,9 @@ function App() {
         {/* TAB 2: KINH DỊCH */}
         {activeTab === 'kinhdich' && (
           <div className="animate-fade-in max-w-7xl mx-auto">
+            <div className="container mx-auto px-4 mb-12">
+              <KinhDichContent />
+            </div>
             <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
               <h2 className="text-2xl font-bold text-center text-red-600 mb-6">
                 Gieo Quẻ Hỏi Việc
