@@ -89,7 +89,9 @@ export const KinhDichContent: React.FC = () => {
             <tbody className="bg-white">
               <tr className="hover:bg-orange-50"><td className="p-3 border">1</td><td className="p-3 border font-bold text-red-700">Càn (乾)</td><td className="p-3 border">Trời, sức mạnh, sáng tạo</td><td className="p-3 border">Thuận lợi, khởi đầu tốt</td></tr>
               <tr className="hover:bg-orange-50"><td className="p-3 border">2</td><td className="p-3 border font-bold text-red-700">Khôn (坤)</td><td className="p-3 border">Đất, nhu thuận, tiếp nhận</td><td className="p-3 border">Cần nhẫn nại, hỗ trợ</td></tr>
-              <tr className="hover:bg-orange-50"><td className="p-3 border">3</td><td className="p-3 border font-bold text-red-700">Thuỷ Lôi Truân</td><td className="p-3 border">Khó khăn ban đầu</td><td className="p-3 border">Giai đoạn khởi sự trở ngại</td></tr>
+              <tr className="hover:bg-orange-50"><td className="p-3 border">3</td><td className="p-3 border font-bold text-red-700">Thuỷ Lôi Truân (屯)</td><td className="p-3 border">Khó khăn ban đầu</td><td className="p-3 border">Giai đoạn khởi sự trở ngại</td></tr>
+                <tr className="hover:bg-orange-50"><td className="p-3 border">4</td><td className="p-3 border font-bold text-red-700">Sơn Thuỷ Mông (蒙)</td><td className="p-3 border">Trí tuệ non nớt</td><td className="p-3 border">Cần học hỏi, tiếp thu kinh nghiệm</td></tr>
+            <tr className="hover:bg-orange-50"><td className= "p-3 border">...</td><td className="p-3 border font-bold" colSpan={3}>Và 60 quẻ khác với ý nghĩa đa dạng</td></tr>
             </tbody>
           </table>
         </div>
