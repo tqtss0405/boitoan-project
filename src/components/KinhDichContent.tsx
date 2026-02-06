@@ -1,6 +1,6 @@
 import React from 'react';
 import { 
-  BookOpen, HelpCircle, Star, Target, ShieldAlert, 
+  BookOpen, Star, Target, ShieldAlert, 
   MessageCircle, Info, ChevronRight, CheckCircle, XCircle 
 } from 'lucide-react';
 
